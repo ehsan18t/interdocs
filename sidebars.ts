@@ -15,12 +15,13 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     "intro",
+    "outline",
     {
       type: "category",
       label: "Database Foundations",
       link: {
         type: "doc",
-        id: "dbms",
+        id: "dbms/outline",
       },
       items: [
         "dbms/ch1-introduction",
