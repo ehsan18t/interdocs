@@ -40,20 +40,20 @@ VALUES (71001, 501, 'Order Pending', 199.00);
 
 **Lab Entities Overview**
 
-| Table           | Purpose                                   | Notable Constraints                         |
-| :-------------- | :----------------------------------------- | :------------------------------------------ |
-| `Inventory`     | Tracks stock levels per SKU               | `CHECK (OnHand >= 0 AND Reserved >= 0)`     |
-| `Orders`        | Customer orders                           | `FOREIGN KEY (Sku) REFERENCES Inventory`   |
-| `Payments`      | Payment authorizations and settlements    | `FOREIGN KEY (OrderID) REFERENCES Orders`  |
-| `LedgerEntries` | Double-entry accounting style audit trail | `FOREIGN KEY (OrderID) REFERENCES Orders`  |
+| Table           | Purpose                                   | Notable Constraints                       |
+| :-------------- | :---------------------------------------- | :---------------------------------------- |
+| `Inventory`     | Tracks stock levels per SKU               | `CHECK (OnHand >= 0 AND Reserved >= 0)`   |
+| `Orders`        | Customer orders                           | `FOREIGN KEY (Sku) REFERENCES Inventory`  |
+| `Payments`      | Payment authorizations and settlements    | `FOREIGN KEY (OrderID) REFERENCES Orders` |
+| `LedgerEntries` | Double-entry accounting style audit trail | `FOREIGN KEY (OrderID) REFERENCES Orders` |
 
 **Baseline Lock Footprint (PostgreSQL example, 10 concurrent read txns)**
 
-| Metric                         | Value | Collection Query                                               |
-| :----------------------------- | :---- | :------------------------------------------------------------- |
-| Average transaction duration   | 34 ms | `pg_stat_statements`                                           |
-| Locks held longer than 100 ms  | 0     | `SELECT * FROM pg_locks WHERE granted AND waitstart IS NOT NULL;` |
-| Deadlocks in last 15 minutes   | 0     | `pg_stat_database_conflicts.deadlocks`                         |
+| Metric                        | Value | Collection Query                                                  |
+| :---------------------------- | :---- | :---------------------------------------------------------------- |
+| Average transaction duration  | 34 ms | `pg_stat_statements`                                              |
+| Locks held longer than 100 ms | 0     | `SELECT * FROM pg_locks WHERE granted AND waitstart IS NOT NULL;` |
+| Deadlocks in last 15 minutes  | 0     | `pg_stat_database_conflicts.deadlocks`                            |
 
 Use this baseline as the reference point for the experiments that follow.
 
@@ -63,12 +63,12 @@ Use this baseline as the reference point for the experiments that follow.
 
 We replay each ACID property using the shared dataset. Execute the variations side by side to see which instrumentation surfaces each violation.
 
-| Variation | Script (abridged)                                                                                                                                           | Expected Observation                                                         |
-| :-------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------- |
-| **Atomicity** | `BEGIN; UPDATE Inventory SET OnHand = OnHand - 2 WHERE Sku = 'SKU-RED'; INSERT INTO LedgerEntries ...; -- simulate crash ROLLBACK;`                      | Inventory count remains 12; orphan ledger row never appears.                 |
-| **Consistency** | `BEGIN; UPDATE Inventory SET OnHand = -5 WHERE Sku = 'SKU-RED'; COMMIT;`                                                                               | `CHECK` constraint rejects commit, transaction aborted.                      |
-| **Isolation** | T1: `BEGIN; SELECT OnHand FROM Inventory WHERE Sku='SKU-RED';` T2: `BEGIN; UPDATE Inventory SET OnHand = OnHand - 10 ...; COMMIT;` T1: `COMMIT;`         | Under `READ COMMITTED`, T1 sees snapshot value of 12 even after T2 commits.  |
-| **Durability** | `BEGIN; UPDATE Payments SET Status = 'Settled' WHERE PaymentID = 9001; COMMIT; -- kill server -- restart`                                              | WAL replays committed update; status remains `Settled`.                      |
+| Variation       | Script (abridged)                                                                                                                                | Expected Observation                                                        |
+| :-------------- | :----------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------- |
+| **Atomicity**   | `BEGIN; UPDATE Inventory SET OnHand = OnHand - 2 WHERE Sku = 'SKU-RED'; INSERT INTO LedgerEntries ...; -- simulate crash ROLLBACK;`              | Inventory count remains 12; orphan ledger row never appears.                |
+| **Consistency** | `BEGIN; UPDATE Inventory SET OnHand = -5 WHERE Sku = 'SKU-RED'; COMMIT;`                                                                         | `CHECK` constraint rejects commit, transaction aborted.                     |
+| **Isolation**   | T1: `BEGIN; SELECT OnHand FROM Inventory WHERE Sku='SKU-RED';` T2: `BEGIN; UPDATE Inventory SET OnHand = OnHand - 10 ...; COMMIT;` T1: `COMMIT;` | Under `READ COMMITTED`, T1 sees snapshot value of 12 even after T2 commits. |
+| **Durability**  | `BEGIN; UPDATE Payments SET Status = 'Settled' WHERE PaymentID = 9001; COMMIT; -- kill server -- restart`                                        | WAL replays committed update; status remains `Settled`.                     |
 
 **ACID Diagnostic Checklist**
 
@@ -103,22 +103,22 @@ COMMIT;
 
 **Isolation Level Results Matrix**
 
-| Isolation Level      | Dirty Read | Non-Repeatable Read | Phantom Row | Notes from Lab Run                                            |
-| :------------------- | :--------- | :------------------ | :---------- | :------------------------------------------------------------- |
-| `READ UNCOMMITTED`   | ✅         | ✅                  | ✅          | Use only for diagnostic queries on replicated secondaries.     |
-| `READ COMMITTED`     | 🚫         | ✅                  | ✅          | Most OLTP defaults; pair with retry logic where needed.        |
-| `REPEATABLE READ`    | 🚫         | 🚫                  | ✅          | Protects aggregates across multiple reads.                    |
-| `SERIALIZABLE`       | 🚫         | 🚫                  | 🚫          | Highest safety; expect more rollbacks due to serialization.    |
+| Isolation Level    | Dirty Read | Non-Repeatable Read | Phantom Row | Notes from Lab Run                                          |
+| :----------------- | :--------- | :------------------ | :---------- | :---------------------------------------------------------- |
+| `READ UNCOMMITTED` | ✅          | ✅                   | ✅           | Use only for diagnostic queries on replicated secondaries.  |
+| `READ COMMITTED`   | 🚫          | ✅                   | ✅           | Most OLTP defaults; pair with retry logic where needed.     |
+| `REPEATABLE READ`  | 🚫          | 🚫                   | ✅           | Protects aggregates across multiple reads.                  |
+| `SERIALIZABLE`     | 🚫          | 🚫                   | 🚫           | Highest safety; expect more rollbacks due to serialization. |
 
 During `SERIALIZABLE` tests, most engines will abort one of the transactions with a serialization failure. Capture the error text and confirm your retry logic handles it gracefully.
 
 **Before vs After Metrics (10 runs each)**
 
-| Metric                              | Read Committed | Serializable | Delta (%) |
-| :---------------------------------- | :------------- | :----------- | :-------- |
-| Average latency (ms)                | 34             | 79           | +132%     |
-| Serialization failures (count)      | 0              | 4            | —         |
-| Throughput (txns per second)        | 285            | 170          | -40%      |
+| Metric                         | Read Committed | Serializable | Delta (%) |
+| :----------------------------- | :------------- | :----------- | :-------- |
+| Average latency (ms)           | 34             | 79           | +132%     |
+| Serialization failures (count) | 0              | 4            | —         |
+| Throughput (txns per second)   | 285            | 170          | -40%      |
 
 ---
 
@@ -143,11 +143,11 @@ SELECT * FROM Orders WHERE OrderID = 501; -- waits for Session B to commit
 
 While the block is active, query system views to inspect lock state.
 
-| Engine     | Diagnostic Query                                                                                     | Insight                                 |
-| :--------- | :---------------------------------------------------------------------------------------------------- | :-------------------------------------- |
-| PostgreSQL | `SELECT pid, relation::regclass, mode, granted FROM pg_locks WHERE NOT granted;`                      | Which relation is blocked and by whom.  |
+| Engine     | Diagnostic Query                                                                                                       | Insight                                      |
+| :--------- | :--------------------------------------------------------------------------------------------------------------------- | :------------------------------------------- |
+| PostgreSQL | `SELECT pid, relation::regclass, mode, granted FROM pg_locks WHERE NOT granted;`                                       | Which relation is blocked and by whom.       |
 | SQL Server | `SELECT request_session_id, resource_type, resource_description FROM sys.dm_tran_locks WHERE request_status = 'WAIT';` | Shows whether block is at row or page level. |
-| MySQL      | `SELECT * FROM performance_schema.data_locks;`                                                        | Confirms gap lock vs record lock.       |
+| MySQL      | `SELECT * FROM performance_schema.data_locks;`                                                                         | Confirms gap lock vs record lock.            |
 
 **Lock Escalation Trigger (SQL Server)**
 
@@ -210,11 +210,11 @@ UPDATE Inventory SET Reserved = Reserved + 1 WHERE Sku = 'SKU-RED';
 
 Most engines detect the cycle and kill one session with a deadlock error. Implement retry logic with exponential backoff.
 
-| What to Capture               | Example Query                                                                                 | Why it Matters                                               |
-| :---------------------------- | :-------------------------------------------------------------------------------------------- | :----------------------------------------------------------- |
-| Deadlock graph (SQL Server)   | `EXEC sys.sp_readerrorlog 0, 1, 'deadlock';`                                                  | Identifies victim and lock order.                           |
-| Latest deadlock (PostgreSQL)  | `SELECT jsonb_pretty(last_deadlock_details) FROM pg_stat_activity WHERE last_deadlock IS NOT NULL;` | Shows statements involved; adjust access ordering.          |
-| InnoDB monitor output         | `SHOW ENGINE INNODB STATUS;`                                                                  | Provides lock wait history and innodb_lock_wait_timeout hit. |
+| What to Capture              | Example Query                                                                                       | Why it Matters                                               |
+| :--------------------------- | :-------------------------------------------------------------------------------------------------- | :----------------------------------------------------------- |
+| Deadlock graph (SQL Server)  | `EXEC sys.sp_readerrorlog 0, 1, 'deadlock';`                                                        | Identifies victim and lock order.                            |
+| Latest deadlock (PostgreSQL) | `SELECT jsonb_pretty(last_deadlock_details) FROM pg_stat_activity WHERE last_deadlock IS NOT NULL;` | Shows statements involved; adjust access ordering.           |
+| InnoDB monitor output        | `SHOW ENGINE INNODB STATUS;`                                                                        | Provides lock wait history and innodb_lock_wait_timeout hit. |
 
 Retry strategy checklist:
 
@@ -228,12 +228,12 @@ Retry strategy checklist:
 
 Instrument transaction health so alerts fire before customers notice stale balances or timeouts.
 
-| Signal                           | Threshold                           | Tools / Queries                                              |
-| :------------------------------- | :---------------------------------- | :----------------------------------------------------------- |
-| Average lock wait > 1s          | Investigate immediately             | `pg_stat_activity`, `sys.dm_os_waiting_tasks`, `performance_schema.events_waits_summary_global_by_event_name` |
-| Version store usage > 70%       | Increase cleanup frequency          | PostgreSQL `autovacuum`, SQL Server `sys.dm_tran_version_store_space_usage` |
-| Deadlock rate > 5 per hour      | Add retries or re-sequence workload | Database engine alerts + app telemetry                      |
-| Rollback ratio spikes > 10%     | Audit business logic                | Monitor commit vs rollback counters                          |
+| Signal                      | Threshold                           | Tools / Queries                                                                                               |
+| :-------------------------- | :---------------------------------- | :------------------------------------------------------------------------------------------------------------ |
+| Average lock wait > 1s      | Investigate immediately             | `pg_stat_activity`, `sys.dm_os_waiting_tasks`, `performance_schema.events_waits_summary_global_by_event_name` |
+| Version store usage > 70%   | Increase cleanup frequency          | PostgreSQL `autovacuum`, SQL Server `sys.dm_tran_version_store_space_usage`                                   |
+| Deadlock rate > 5 per hour  | Add retries or re-sequence workload | Database engine alerts + app telemetry                                                                        |
+| Rollback ratio spikes > 10% | Audit business logic                | Monitor commit vs rollback counters                                                                           |
 
 **Deploy-Ready Checklist**
 
