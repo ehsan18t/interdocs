@@ -5,6 +5,10 @@ title: Chapter 4 · SQL Fundamentals
 
 ### **4.1. Introduction to SQL**
 
+:::tip Quick Briefing
+SQL is the declarative language for relational databases: you describe the data you want, and the DBMS chooses the plan. Mastering SQL means understanding its core categories—DDL, DML, DQL, DCL, TCL—and how they map to everyday tasks like modeling data, loading it, querying it, and securing it.
+:::
+
 **What is SQL?**
 SQL, which stands for **Structured Query Language**, is the universal language for communicating with relational databases. Often pronounced "sequel" or "S-Q-L," it's a **declarative** language. This means you describe **what** data you want, and the database management system (DBMS) figures out the most efficient way **how** to get it for you.
 
@@ -81,6 +85,10 @@ sequenceDiagram
 
 To make the examples predictable and easy to follow, we will rely on the same miniature library dataset. This setup is a classic relational model, with tables linked by keys.
 
+:::tip Quick Briefing
+Use these three tables—`Authors`, `Books`, and `BookLoans`—as the baseline state for every query that follows. They illustrate primary/foreign keys, many-to-one relationships, and nullable columns so you can focus on the SQL clause being showcased.
+:::
+
 :::info Key Concepts: Primary vs. Foreign Keys
 
   * A **Primary Key (PK)** is a column (or set of columns) that uniquely identifies each row in a table. `AuthorID` in the `Authors` table is a PK. It cannot be `NULL` and must be unique.
@@ -114,13 +122,19 @@ To make the examples predictable and easy to follow, we will rely on the same mi
 | 3           | 202         | Priya Singh    | 2024-01-04 | NULL       |
 | 4           | 101         | Wei Chen       | 2024-01-12 | 2024-01-20 |
 
-> **Note on `NULL`:** The value `NULL` represents missing or unknown data. It is not the same as zero or an empty string (`''`). In the `BookLoans` table, `ReturnedAt IS NULL` indicates that the book is still checked out.
+:::note Null Handling
+The value `NULL` represents missing or unknown data. It is not the same as zero or an empty string (`''`). In the `BookLoans` table, `ReturnedAt IS NULL` indicates that the book is still checked out.
+:::
 
 -----
 
 ### **4.2. Data Definition Language (DDL)**
 
 DDL statements **define and manage the database structure or schema**. These commands build and modify the "container" that holds your data. Think of them as the architectural blueprints. 🏛️
+
+:::tip Quick Briefing
+Reach for DDL when you need to shape the schema: `CREATE` builds objects, `ALTER` adjusts them, `DROP` removes them, and `TRUNCATE` quickly empties them. Treat these commands as structural changes that often require elevated permissions and extra caution.
+:::
 
 #### **`CREATE`**
 
@@ -277,9 +291,9 @@ It's much faster than `DELETE` for wiping a table, but it's less flexible as it 
 
 ### **🧠 DDL Interview Questions**
 
-> **Question 1: What is the difference between `DELETE`, `TRUNCATE`, and `DROP`?**
-
-This is one of the most common SQL interview questions.
+:::note Question 1
+**What is the difference between `DELETE`, `TRUNCATE`, and `DROP`?** This is one of the most common SQL interview questions.
+:::
 
 | Feature            | `DELETE`                                   | `TRUNCATE`                                          | `DROP`                                             |
 | :----------------- | :----------------------------------------- | :-------------------------------------------------- | :------------------------------------------------- |
@@ -291,21 +305,29 @@ This is one of the most common SQL interview questions.
 | **Identity Reset** | Does not reset `SERIAL`/`AUTO_INCREMENT`   | **Resets** `SERIAL`/`AUTO_INCREMENT` counters       | N/A (the counter is gone)                          |
 | **Analogy**        | Shredding specific files from a cabinet    | Emptying the entire file cabinet                    | Burning the entire file cabinet                    |
 
-> **Question 2: What is a constraint and why is it useful? Give examples.**
-
-A **constraint** is a rule enforced on the data in a table to ensure accuracy and reliability. They are the database's primary defense against bad data.
+:::note Question 2
+**What is a constraint and why is it useful? Give examples.** A **constraint** is a rule enforced on the data in a table to ensure accuracy and reliability. They are the database's primary defense against bad data.
 
   * **`NOT NULL`**: Ensures a column cannot have a `NULL` value.
   * **`UNIQUE`**: Ensures all values in a column are different from each other.
   * **`PRIMARY KEY`**: A combination of `NOT NULL` and `UNIQUE` that uniquely identifies each row.
   * **`FOREIGN KEY`**: Ensures referential integrity by linking to a primary key in another table.
   * **`CHECK`**: Ensures that all values in a column satisfy a specific condition (e.g., `Price >= 0`).
+:::
 
 -----
 
 ### **4.3. Data Manipulation Language (DML)**
 
 DML statements **manage the data within schema objects**. If DDL builds the house, DML puts the furniture in, rearranges it, and takes it out. 🛋️
+
+:::tip Quick Briefing
+Use DML to change the contents of tables: `INSERT` adds rows, `UPDATE` adjusts them, and `DELETE` removes them. Always preview the rows you’re about to touch—especially for `UPDATE` and `DELETE`—to avoid unintended bulk changes.
+:::
+
+:::note Reset Assumption
+Each variation starts from the practice dataset in section 4.1.1 so the effect of each statement is isolated.
+:::
 
 #### **`INSERT`**
 
@@ -317,6 +339,17 @@ Adds new rows of data into a table.
 INSERT INTO Books (BookID, Title, PublicationYear, AuthorID, Genre, Price)
 VALUES (302, 'Dune', 1965, 4, 'Science Fiction', 15.99);
 ```
+
+***Result:*** A new row appears for `Dune` (BookID 302) while the existing catalog remains unchanged.
+
+| BookID | Title                 | PublicationYear | AuthorID | Genre            | Price |
+| :----- | :-------------------- | :-------------- | :------- | :--------------- | :---- |
+| 101    | 1984                  | 1949            | 1        | Dystopian        | 12.99 |
+| 102    | Animal Farm           | 1945            | 1        | Political Satire | 8.99  |
+| 201    | The Hobbit            | 1937            | 2        | Fantasy          | 10.50 |
+| 202    | The Lord of the Rings | 1954            | 2        | Fantasy          | 25.00 |
+| 301    | Foundation            | 1951            | 3        | Science Fiction  | 14.25 |
+| 302    | Dune                  | 1965            | 4        | Science Fiction  | 15.99 |
 
 :::tip Best Practice: Explicit Column Names
 Always list the columns explicitly (`INSERT INTO Table (Col1, Col2)`). This makes your code more readable and prevents it from breaking if columns are added or reordered in the future.
@@ -332,6 +365,16 @@ VALUES
   (5, 'Ursula', 'Le Guin', 'American');
 ```
 
+***Result:*** Two new authors join the roster.
+
+| AuthorID | FirstName | LastName | Nationality      |
+| :------- | :-------- | :------- | :--------------- |
+| 1        | George    | Orwell   | British          |
+| 2        | J.R.R.    | Tolkien  | British          |
+| 3        | Isaac     | Asimov   | Russian-American |
+| 4        | Frank     | Herbert  | American         |
+| 5        | Ursula    | Le Guin  | American         |
+
 **Variation C – Insert data from another table**
 This is useful for populating summary tables or migrating data.
 
@@ -342,6 +385,14 @@ SELECT BookID, Title, Price
 FROM Books
 WHERE Genre = 'Science Fiction' AND BookID = 301;
 ```
+
+***Result:*** The `FantasyBooks` snapshot now tracks the sci-fi title `Foundation`, which was copied in from the main catalog.
+
+| BookID | Title                 | Price |
+| :----- | :-------------------- | :---- |
+| 201    | The Hobbit            | 10.50 |
+| 202    | The Lord of the Rings | 25.00 |
+| 301    | Foundation            | 14.25 |
 
 -----
 
@@ -365,6 +416,12 @@ SET Price = 22.50
 WHERE BookID = 202;
 ```
 
+***Result:*** Only the targeted row changes price.
+
+| BookID | Title                 | Price |
+| :----- | :-------------------- | :---- |
+| 202    | The Lord of the Rings | 22.50 |
+
 **Variation B – Conditional update on multiple rows**
 Give a 10% discount to all books by George Orwell.
 
@@ -373,6 +430,13 @@ UPDATE Books
 SET Price = Price * 0.90
 WHERE AuthorID = 1;
 ```
+
+***Result:*** Both Orwell titles reflect the 10% discount (rounded to two decimals).
+
+| BookID | Title        | New Price |
+| :----- | :----------- | :-------- |
+| 101    | 1984         | 11.69     |
+| 102    | Animal Farm  | 8.09      |
 
 **Variation C – Updating a table using values from another table**
 Suppose we have a `NewPrices` staging table with price updates.
@@ -395,6 +459,13 @@ JOIN NewPrices np ON b.BookID = np.BookID
 SET b.Price = np.NewPrice;
 ```
 
+***Result:*** Prices synchronize with the staging table.
+
+| BookID | Title      | Price |
+| :----- | :--------- | :---- |
+| 101    | 1984       | 11.50 |
+| 201    | The Hobbit | 9.75  |
+
 -----
 
 #### **`DELETE`**
@@ -408,6 +479,15 @@ DELETE FROM Books
 WHERE BookID = 102; -- Removes 'Animal Farm'
 ```
 
+***Result:*** `Animal Farm` no longer appears in the catalog.
+
+| BookID | Title                 |
+| :----- | :-------------------- |
+| 101    | 1984                  |
+| 201    | The Hobbit            |
+| 202    | The Lord of the Rings |
+| 301    | Foundation            |
+
 If `BookID` 102 were referenced in `BookLoans`, this would fail due to the foreign key constraint, protecting your data.
 
 **Variation B – Delete a set of rows using `IN`**
@@ -417,7 +497,7 @@ DELETE FROM Authors
 WHERE Nationality IN ('American', 'Russian-American');
 ```
 
-This would attempt to delete Isaac Asimov and any other American authors we added. Again, it would fail if their books still exist in the `Books` table.
+***Result:*** The statement tries to remove Isaac Asimov (and any American authors), but it raises a foreign-key error because their books still reference them.
 
 **Variation C – Delete using a subquery**
 This powerful pattern lets you delete based on a condition in another table.
@@ -432,11 +512,22 @@ WHERE BookID IN (
 );
 ```
 
+***Result:*** Loans tied to fantasy titles (BookIDs 201 and 202) disappear, leaving only the loans for `1984`.
+
+| LoanID | BookID | Borrower      | BorrowedAt | ReturnedAt |
+| :----- | :----- | :------------ | :--------- | :--------- |
+| 1      | 101    | Alicia Taylor | 2024-01-03 | 2024-01-10 |
+| 4      | 101    | Wei Chen      | 2024-01-12 | 2024-01-20 |
+
 -----
 
 ### **4.4. Data Query Language (DQL)**
 
 DQL is used to **retrieve data** from the database. It's how you ask questions. The `SELECT` statement is its cornerstone and the command you will use most often. 🧐
+
+:::tip Quick Briefing
+`SELECT` queries are assembled clause by clause: decide the tables (`FROM`/`JOIN`), filter rows (`WHERE`), shape results (`SELECT`, expressions, window functions), group if needed, then sort or limit. Follow that recipe and you can answer most data questions clearly.
+:::
 
 #### **`SELECT`**
 
@@ -448,6 +539,16 @@ Walk through the core building blocks to see how a query is constructed.
 ```sql
 SELECT * FROM Books;
 ```
+
+***Result:*** Returns every column for all five baseline books.
+
+| BookID | Title                 | PublicationYear | AuthorID | Genre            | Price |
+| :----- | :-------------------- | :-------------- | :------- | :--------------- | :---- |
+| 101    | 1984                  | 1949            | 1        | Dystopian        | 12.99 |
+| 102    | Animal Farm           | 1945            | 1        | Political Satire | 8.99  |
+| 201    | The Hobbit            | 1937            | 2        | Fantasy          | 10.50 |
+| 202    | The Lord of the Rings | 1954            | 2        | Fantasy          | 25.00 |
+| 301    | Foundation            | 1951            | 3        | Science Fiction  | 14.25 |
 
 :::tip Avoid `SELECT *` in Production Code
 While handy for exploration, it's bad practice in application code.
@@ -467,6 +568,16 @@ SELECT
 FROM Books;
 ```
 
+***Result:*** Shows the original price and a calculated 15% discount.
+
+| Title                 | Price | SalePrice |
+| :-------------------- | :---- | :-------- |
+| 1984                  | 12.99 | 11.04     |
+| Animal Farm           | 8.99  | 7.64      |
+| The Hobbit            | 10.50 | 8.93      |
+| The Lord of the Rings | 25.00 | 21.25     |
+| Foundation            | 14.25 | 12.11     |
+
 The underlying `Books.Price` column is unchanged.
 
 **Variation C – Filter rows with `WHERE`**
@@ -478,6 +589,13 @@ FROM Books
 WHERE Price > 12 AND Genre <> 'Fantasy'; -- <> means 'not equal to'
 ```
 
+***Result:*** Yields high-priced, non-fantasy titles.
+
+| Title   | Genre           | Price |
+| :------ | :-------------- | :---- |
+| 1984    | Dystopian       | 12.99 |
+| Foundation | Science Fiction | 14.25 |
+
 **Variation D – Pattern matching with `LIKE`**
 `%` is a wildcard for any number of characters. `_` is a wildcard for a single character.
 
@@ -488,6 +606,13 @@ FROM Books
 WHERE Title LIKE '%The%';
 ```
 
+***Result:*** Only titles containing the substring `'The'` are returned.
+
+| Title                 |
+| :-------------------- |
+| The Hobbit            |
+| The Lord of the Rings |
+
 **Variation E – Sorting the result with `ORDER BY`**
 
 ```sql
@@ -496,6 +621,16 @@ SELECT Title, Genre, Price
 FROM Books
 ORDER BY Genre ASC, Price DESC; -- ASC is the default
 ```
+
+***Result:*** Sorted first by genre, then by descending price within each genre.
+
+| Title                 | Genre            | Price |
+| :-------------------- | :--------------- | :---- |
+| 1984                  | Dystopian        | 12.99 |
+| The Lord of the Rings | Fantasy          | 25.00 |
+| The Hobbit            | Fantasy          | 10.50 |
+| Animal Farm           | Political Satire | 8.99  |
+| Foundation            | Science Fiction  | 14.25 |
 
 **Variation F – Limiting the number of rows (`LIMIT`/`TOP`/`FETCH`)**
 Essential for pagination and finding "Top N" records.
@@ -514,6 +649,13 @@ LIMIT 2; -- PostgreSQL/MySQL/SQLite
 -- SELECT Title, Price FROM Books ORDER BY Price DESC FETCH FIRST 2 ROWS ONLY;
 ```
 
+***Result:*** Returns the two highest-priced titles in the catalogue.
+
+| Title                 | Price |
+| :-------------------- | :---- |
+| The Lord of the Rings | 25.00 |
+| Foundation            | 14.25 |
+
 **Variation G – Aggregating data with `GROUP BY`**
 `GROUP BY` collapses multiple rows into a single summary row. It's used with aggregate functions like `COUNT()`, `SUM()`, `AVG()`, `MAX()`, `MIN()`.
 
@@ -526,6 +668,15 @@ FROM Books
 GROUP BY Genre
 ORDER BY NumberOfBooks DESC;
 ```
+
+***Result:*** Aggregates rows by genre, revealing volume and average pricing.
+
+| Genre            | NumberOfBooks | AveragePrice |
+| :--------------- | :------------ | :----------- |
+| Fantasy          | 2             | 17.75        |
+| Dystopian        | 1             | 12.99        |
+| Political Satire | 1             | 8.99         |
+| Science Fiction  | 1             | 14.25        |
 
 :::info The `GROUP BY` Golden Rule
 Any non-aggregated column in the `SELECT` list **must** also be in the `GROUP BY` clause.
@@ -544,6 +695,12 @@ GROUP BY Genre
 HAVING COUNT(*) > 1; -- Filter the groups, not the original rows
 ```
 
+***Result:*** Only genres meeting the `HAVING` threshold remain.
+
+| Genre   | TitleCount |
+| :------ | :--------- |
+| Fantasy | 2          |
+
 This would only return the "Fantasy" genre.
 
 **Variation I – Combining data from multiple tables with `JOIN`**
@@ -557,6 +714,16 @@ SELECT
 FROM Books AS b
 JOIN Authors AS a ON b.AuthorID = a.AuthorID;
 ```
+
+***Result:*** Merges book titles with their authors.
+
+| Title                 | FirstName | LastName |
+| :-------------------- | :-------- | :------- |
+| 1984                  | George    | Orwell   |
+| Animal Farm           | George    | Orwell   |
+| The Hobbit            | J.R.R.    | Tolkien  |
+| The Lord of the Rings | J.R.R.    | Tolkien  |
+| Foundation            | Isaac     | Asimov   |
 
 This links each book to its author's name.
 
@@ -572,6 +739,16 @@ SELECT
   AVG(Price) OVER (PARTITION BY Genre) AS AvgPriceForGenre
 FROM Books;
 ```
+
+***Result:*** Each row keeps its detail while showing the genre-level average alongside it.
+
+| Title                 | Genre            | Price | AvgPriceForGenre |
+| :-------------------- | :--------------- | :---- | :--------------- |
+| 1984                  | Dystopian        | 12.99 | 12.99            |
+| Animal Farm           | Political Satire | 8.99  | 8.99             |
+| The Hobbit            | Fantasy          | 10.50 | 17.75            |
+| The Lord of the Rings | Fantasy          | 25.00 | 17.75            |
+| Foundation            | Science Fiction  | 14.25 | 14.25            |
 
 **Result:**
 | Title                 | Genre   | Price | AvgPriceForGenre |
@@ -614,15 +791,20 @@ ORDER BY
   b.PublicationYear;
 ```
 
+***Result:*** Only Tolkien’s pre-1950 fantasy classic qualifies.
+
+| Title      | PublicationYear | AuthorFullName   |
+| :--------- | :-------------- | :---------------- |
+| The Hobbit | 1937            | J.R.R. Tolkien   |
+
 **Result:** A concise list answering the question directly. Practicing this translation loop makes SQL feel conversational.
 
 -----
 
 ### **🧠 DQL Interview Questions**
 
-> **Question 1: Explain the logical order of operations in a `SELECT` statement.**
-
-This is a key concept. Even though we write `SELECT` first, the database executes the clauses in a different, logical order:
+:::note Question 1
+**Explain the logical order of operations in a `SELECT` statement.** This is a key concept. Even though we write `SELECT` first, the database executes the clauses in a different, logical order:
 
 1.  `FROM` / `JOIN`: Gathers all the data from the specified tables.
 2.  `WHERE`: Filters individual rows based on conditions.
@@ -632,17 +814,17 @@ This is a key concept. Even though we write `SELECT` first, the database execute
 6.  `DISTINCT`: Removes duplicate rows.
 7.  `ORDER BY`: Sorts the final result set.
 8.  `LIMIT` / `OFFSET`: Selects a subset of the sorted rows.
+:::
 
-> **Question 2: What is the difference between `UNION` and `UNION ALL`?**
-
-Both operators combine the result sets of two or more `SELECT` statements.
+:::note Question 2
+**What is the difference between `UNION` and `UNION ALL`?** Both operators combine the result sets of two or more `SELECT` statements.
 
   * **`UNION`**: Removes duplicate rows from the combined result set. It's like doing a `UNION ALL` followed by a `DISTINCT`.
   * **`UNION ALL`**: Includes all rows, including duplicates. It is faster because it doesn't need to check for duplicates.
+:::
 
-> **Question 3: What is the difference between a subquery and a Common Table Expression (CTE)?**
-
-Both can be used to break down complex queries.
+:::note Question 3
+**What is the difference between a subquery and a Common Table Expression (CTE)?** Both can be used to break down complex queries.
 
   * A **Subquery** is a `SELECT` statement nested inside another statement. They can sometimes be hard to read if nested deeply.
   * A **Common Table Expression (CTE)** is a temporary, named result set, defined using a `WITH` clause. CTEs are often much more readable for complex, multi-step queries and can be recursive.
@@ -660,12 +842,17 @@ SELECT b.Title, ba.LastName
 FROM Books b
 JOIN BritishAuthors ba ON b.AuthorID = ba.AuthorID;
 ```
+:::
 
 -----
 
 ### **4.5. Data Control Language (DCL)**
 
 DCL statements manage **permissions and access control**. They determine who can do what to which database objects. Think of them as the database's security guard. 🛡️
+
+:::tip Quick Briefing
+`GRANT` and `REVOKE` let you manage who can read, write, or administer database objects. Favor roles over individual user grants so you can update access in one place as teams change.
+:::
 
   * **`GRANT`**: Gives a specific user permissions to perform tasks.
   * **`REVOKE`**: Takes away permissions from a user.
@@ -708,6 +895,10 @@ Instead of granting permissions to individual users, it's better to grant them t
 ### **4.6. Transaction Control Language (TCL)**
 
 TCL statements manage **transactions**, which are sequences of operations performed as a single, logical unit of work. Transactions ensure data integrity through the ACID properties.
+
+:::tip Quick Briefing
+Transactions bundle multiple DML statements into an all-or-nothing unit. Use `BEGIN`/`COMMIT` when everything succeeds, `ROLLBACK` if something goes wrong, and `SAVEPOINT` to selectively undo part of the work.
+:::
 
 :::info What is ACID?
 ACID is a set of properties that guarantee database transactions are processed reliably. This is a critical concept in DBMS theory.
