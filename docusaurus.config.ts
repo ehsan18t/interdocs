@@ -9,13 +9,21 @@ const config: Config = {
   tagline: "Interview-ready technical playbooks",
   favicon: "img/favicon.ico",
 
+  // Enable Mermaid support
+  themes: ["@docusaurus/theme-mermaid"],
+  // In order for Mermaid code blocks in Markdown to work,
+  // you also need to enable the Remark plugin with this option
+  markdown: {
+    mermaid: true,
+  },
+
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
     v4: true, // Improve compatibility with the upcoming Docusaurus v4
   },
 
   // Set the production url of your site here
-  url: "https://interdocs.dev",
+  url: "https://interdocs.ehsankhan.me",
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: "/",
@@ -70,7 +78,7 @@ const config: Config = {
           label: "Curriculum",
         },
         {
-          href: "https://github.com/interdocs/site",
+          href: "https://github.com/ehsan18t/interdocs",
           label: "GitHub",
           position: "right",
         },
@@ -93,11 +101,11 @@ const config: Config = {
           items: [
             {
               label: "GitHub",
-              href: "https://github.com/interdocs/site",
+              href: "https://github.com/ehsan18t/interdocs",
             },
             {
               label: "LinkedIn",
-              href: "https://www.linkedin.com",
+              href: "https://www.linkedin.com/in/ehsan18t",
             },
           ],
         },
