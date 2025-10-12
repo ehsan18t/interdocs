@@ -20,7 +20,7 @@ const sidebars: SidebarsConfig = {
       label: "Database Foundations",
       link: {
         type: "doc",
-        id: "outline",
+        id: "dbms",
       },
       items: [
         "dbms/ch1-introduction",
