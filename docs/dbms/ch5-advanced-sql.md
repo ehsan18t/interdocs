@@ -578,3 +578,28 @@ AS $$    SELECT first_name || ' ' || last_name;$$;
 SELECT GetFullName(FirstName, LastName) AS FullName, Salary
 FROM Employees;
 ```
+
+---
+
+### **5.10. Advanced Query Playbook for Newcomers**
+
+If you are jumping into intermediate SQL for the first time, use this cheat sheet to stay oriented:
+
+| Scenario | Tool to Reach For | Why |
+| :-- | :-- | :-- |
+| "I need to filter or sort before summarizing" | `WHERE` before `GROUP BY` | Keeps the aggregation set small and accurate |
+| "I must compare a row to its peers" | Window functions (`OVER (...)`) | They maintain row-level detail while adding context |
+| "I want rows that exist in one table but not the other" | `LEFT JOIN ... WHERE right_table.id IS NULL` or `EXCEPT` | Makes anti-joins explicit |
+| "I need reusable logic" | Views, CTEs, or UDFs | Encapsulates complexity so future queries stay readable |
+
+```mermaid
+flowchart TD
+  question[Business Question] --> translate[Translate to SELECT, JOIN, WHERE]
+  translate --> refine[Add Aggregates or Window Functions]
+  refine --> review[Test with Sample Data]
+  review --> deliver[Share Results / Build View]
+  classDef step fill:#f6f9ff,stroke:#1f4db3,stroke-width:2px,color:#0c1a36;
+  class question,translate,refine,review,deliver step;
+```
+
+> **Reminder:** Complex SQL is simply a stack of simple SQL blocks. When a query feels intimidating, collapse it into smaller CTEs or views you can reason about one at a time.

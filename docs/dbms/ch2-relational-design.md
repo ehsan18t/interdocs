@@ -7,6 +7,8 @@ title: Chapter 2 · Core Concepts of the Relational Model
 
 The beauty of the relational model lies in its simplicity. It represents all data in a two-dimensional structure that is intuitive to humans: the table. However, to speak professionally, we must learn the formal terminology derived from mathematics.
 
+> **Analogy:** Imagine a fitness studio's class board. Each row lists a specific session, and each column captures details such as instructor, start time, and room. Everyone can read the board instantly because the structure stays consistent. A relational table plays the same role, just in software.
+
 **The Building Blocks**
 
 * **Table (formally, a Relation):** A collection of related data entries organized in rows and columns. A relation is a set of tuples, meaning every tuple is unique, and the order of tuples does not matter.
@@ -27,6 +29,37 @@ Here is a simple representation of an `Employees` relation with three tuples and
 | 103                    | Charlie   | Brown    | 2            |
 
 *This entire structure is a **Relation**. Each row is a **Tuple**. Each column header is an **Attribute**.*
+
+```mermaid
+mindmap
+    root((Relation))
+        Tuple
+            "Single row"
+        Attribute
+            "Column definition"
+        Domain
+            "Allowed values"
+        Key
+            "Uniqueness guarantee"
+```
+
+### **2.1.1. Running Example: Team Directory Schema**
+
+Keep this mini-schema in mind as you read the rest of the chapter. Every concept—keys, constraints, relationships—maps back to it.
+
+```sql
+CREATE TABLE TeamMembers (
+        MemberID SERIAL PRIMARY KEY,
+        FullName TEXT NOT NULL,
+        Role TEXT NOT NULL,
+        StartDate DATE NOT NULL
+);
+
+INSERT INTO TeamMembers (FullName, Role, StartDate) VALUES
+('Amelia Chen', 'Data Engineer', '2023-02-15'),
+('Sameer Patel', 'Data Analyst', '2022-09-01'),
+('Carmen Ortiz', 'Engineering Manager', '2021-04-05');
+```
 
 ### **2.2. The Power of Keys**
 
@@ -78,6 +111,15 @@ erDiagram
 
 > **Common Pitfall: Using Natural vs. Surrogate Keys.** A "natural" key is an attribute that already exists in the real world (e.g., a Social Security Number). A "surrogate" key is an artificial key with no business meaning (e.g., an auto-incrementing `EmployeeID`). Beginners often use natural keys as primary keys, but this is risky. What if the natural key changes (e.g., a person changes their name)? What if privacy laws require it to be encrypted? It's almost always safer and more robust to use a surrogate primary key.
 
+### **Keys by Analogy**
+
+- **Primary Key → Passport Number:** one official identifier per traveler.
+- **Alternate Key → Driver’s License:** still unique, just not the default reference inside our system.
+- **Foreign Key → Boarding Pass:** only valid if both traveler and flight exist.
+- **Composite Key → Multi-leg Ticket:** you need both the passenger name and flight number to describe the booking.
+
+Use these comparisons when explaining relational ideas to non-technical teammates; it keeps the terminology approachable.
+
 ### **2.3. Constraints: The Rules of the Database**
 
 Constraints are rules enforced on data columns to ensure the accuracy and reliability of the data. They prevent invalid data from being entered, thus guaranteeing data integrity. Think of them as the automated guardrails for your data quality.
@@ -92,3 +134,17 @@ Constraints are rules enforced on data columns to ensure the accuracy and reliab
 * **Entity Integrity:** Ensures that every table has a primary key and that the primary key is unique and not null. This guarantees that every row can be uniquely identified. Without this, you could have two identical rows, leading to ambiguity.
 * **Referential Integrity:** Ensures that a foreign key value in one table always refers to a valid, existing primary key in another table (or is NULL). This prevents "orphan" records. For example, you couldn't assign an employee to a `DepartmentID` of 99 if a department with that ID doesn't exist in the `Departments` table.
 * **User-Defined Integrity:** Business rules that don't fall into the other categories, often implemented using triggers (special procedures that automatically run when an event occurs) or more complex stored procedures.
+
+```sql
+-- Constraints in action for our team directory
+ALTER TABLE TeamMembers
+    ADD CONSTRAINT chk_role CHECK (Role IN ('Data Engineer', 'Data Analyst', 'Engineering Manager')),
+    ADD CONSTRAINT chk_startdate CHECK (StartDate >= DATE '2000-01-01');
+
+-- Attempting invalid data
+INSERT INTO TeamMembers (FullName, Role, StartDate)
+VALUES ('Kai Lopez', 'Intern', '1998-06-01');
+-- Result: ERROR, because Role violates the CHECK constraint.
+```
+
+> **Checklist:** Whenever you design a table ask: (1) What columns require `NOT NULL`? (2) Where should `CHECK` enforce business rules? (3) Which foreign keys keep references honest?

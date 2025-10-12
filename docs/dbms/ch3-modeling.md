@@ -29,6 +29,16 @@ flowchart LR
     class Strategy,Requirements,Design,Implementation,Testing,Deployment,Maintenance phase;
 ```
 
+| Phase | Key Artifact | Guiding Question |
+| :-- | :-- | :-- |
+| Strategy | Vision statement, budget estimate | Why are we building this and is it feasible? |
+| Requirements | User stories, business rules | What information must the system capture? |
+| Design | ER diagrams, schema docs | How should the data be structured? |
+| Implementation | DDL scripts, migrations | How do we build and version the schema? |
+| Testing | Test plans, sample datasets | Does the schema behave as expected? |
+| Deployment | Release checklist | How do we cut over safely? |
+| Maintenance | Monitoring dashboards | How do we keep it healthy over time? |
+
 ### **3.2. Data Modeling: From Idea to Blueprint**
 
 Data modeling is the process of creating a visual representation (a data model) of the data objects in a system and the relationships between them. This process is broken down into three stages of increasing detail, moving from the abstract to the concrete.
@@ -58,6 +68,8 @@ A detailed, technology-agnostic blueprint. This is where the core design work ha
     * Attributes: CourseID (Primary Key), CourseTitle, Credits, ProfessorID (Foreign Key to Professor)
 * **Resolving M:N Relationship:** Students and Courses have a many-to-many relationship. We create a new "linking" table.
     * **Enrollment Entity:** A new table with a composite primary key of (StudentID, CourseID). It might also have an attribute like `Grade`.
+
+> **Analogy:** The conceptual model is a subway map—clearly labelled stops and lines. The logical model is the timetable, adding detail about departures and connections. The physical model is the actual tracks, switches, and signal systems that make trains run.
 
 ```mermaid
 erDiagram
@@ -236,6 +248,22 @@ Here, `ManagerName` depends on `ManagerID`, which is a non-key attribute. This i
 
 Now our data is in 3NF. Redundancy is minimized, and anomalies are eliminated. Each attribute depends only on its table's primary key.
 
+```mermaid
+mindmap
+    root((Normalization))
+        1NF
+            "Atomic columns"
+            "Unique rows"
+        2NF
+            "No partial dependency"
+            "Only relevant for composite keys"
+        3NF
+            "No transitive dependency"
+            "Non-key depends on key"
+        BCNF
+            "Every determinant is a candidate key"
+```
+
 ### Denormalization
 
 Sometimes, for performance reasons (especially in read-heavy data warehouses), designers will intentionally violate normalization rules. This process, called denormalization, reduces the number of joins needed for a query but re-introduces redundancy. It's a deliberate trade-off that should be made carefully and only after profiling performance.
@@ -258,3 +286,5 @@ Sometimes, for performance reasons (especially in read-heavy data warehouses), d
 - **Favor read replicas or caches first:** Sometimes adding an index, using a read replica, or caching results is sufficient without altering the schema.
 
 > **Rule of Thumb:** Normalize first for correctness, measure performance, and only denormalize surgically with a rollback plan.
+
+**Mini Case Study:** An analytics team notices that a dashboard query joins five tables to present monthly revenue by region. After profiling, they create a denormalized `monthly_revenue_snapshot` table that materializes the pre-aggregated numbers nightly. Read performance drops from 4 seconds to 250 ms, while a background job keeps the snapshot synchronized. Documenting this trade-off makes ongoing maintenance sustainable.

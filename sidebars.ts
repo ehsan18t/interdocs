@@ -24,6 +24,7 @@ const sidebars: SidebarsConfig = {
         id: "dbms/outline",
       },
       items: [
+        "dbms/ch0-foundations",
         "dbms/ch1-introduction",
         "dbms/ch2-relational-design",
         "dbms/ch3-modeling",
