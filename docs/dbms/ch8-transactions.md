@@ -3,124 +3,244 @@ sidebar_position: 8
 title: Chapter 8 · Transactions and Concurrency
 ---
 
-### **Introduction**
+### **Welcome to the Concurrency Lab**
 
-Welcome to one of the most foundational and powerful concepts in the database world. So far, we have treated database operations as isolated events. But in the real world, applications are constantly reading and writing data simultaneously. Dozens, thousands, or even millions of operations might be happening at the same time.
+Up to this point we executed SQL as if each statement lived in a vacuum. Production workloads are different: hundreds of checkout carts close at the same time, account transfers overlap, and analytics jobs sweep through the same tables that the day-to-day transactions modify. In this chapter we build a hands-on lab showing how a relational engine keeps order inside that chaos.
 
-How does a database prevent chaos? What stops two people from booking the last seat on a flight at the exact same millisecond? What ensures that a multi-step bank transfer either completes fully or fails completely, but never leaves the money in limbo?
-
-The answer lies in **Transaction Management**. A transaction is the mechanism that guarantees data remains accurate and consistent, even under heavy, concurrent use. This chapter explores the "all or nothing" principle of transactions via the **ACID** properties and dives deep into the concurrency control mechanisms that allow databases to perform magic behind the scenes.
-
----
-
-### **8.1. Transactions and ACID**
-
-A **transaction** is a sequence of one or more SQL operations performed as a single, logical unit of work. All operations within the transaction must succeed together. If even one of them fails, the entire transaction fails, and the database is left unchanged, as if the transaction never even started.
-
-**The Classic Analogy: A Bank Transfer**
-A bank transfer from Account A to Account B is the perfect example of a transaction. It consists of two operations:
-1.  Debit $100 from Account A's balance.
-2.  Credit $100 to Account B's balance.
-
-These two operations are a single logical unit. We need a guarantee that both happen, or neither happens. It would be catastrophic if the the debit succeeded but the credit failed, causing $100 to simply vanish. This guarantee is provided by the four properties of a reliable transaction, known by the acronym **ACID**.
-
-
-
-#### **A - Atomicity (The "All or Nothing" Rule)**
-* **What it is:** Atomicity guarantees that all operations within a transaction are completed as a single, indivisible unit. The transaction is a single "atom" of work.
-* **Analogy:** A wedding vow. You can't be "partially married." Either the entire ceremony completes successfully and you are married, or something interrupts it, and the state reverts to unmarried.
-* **Database Example (Violation):**
-    1.  `BEGIN TRANSACTION;`
-    2.  `UPDATE Accounts SET Balance = Balance - 100 WHERE AccountID = 'A';` -> **Succeeds.**
-    3.  `-- Power outage crashes the database server here! --`
-    4.  `UPDATE Accounts SET Balance = Balance + 100 WHERE AccountID = 'B';` -> **Never runs.**
-* **How it's Enforced:** The database uses a **transaction log** (like a Write-Ahead Log or WAL). Before making a change, it writes its intention to the log. If a crash occurs, upon restart the database reviews the log. It sees an incomplete transaction and **rolls back** the changes that were made (in this case, crediting the $100 back to Account A), ensuring the database state is consistent.
-
-#### **C - Consistency (The "Rule Follower")**
-* **What it is:** Consistency ensures that a transaction can only bring the database from one valid state to another. All data integrity constraints (like `PRIMARY KEY`, `FOREIGN KEY`, `NOT NULL`, `CHECK`) must be satisfied.
-* **Analogy:** A chess game. You can only make moves that are legal according to the rules of chess. You can't move a pawn backward. Any move you make transitions the board from one valid state to another.
-* **Database Example (Violation):**
-    Imagine a `CHECK` constraint `CHECK (Balance >= 0)` on the `Accounts` table.
-    1.  Account A has a balance of $50.
-    2.  `BEGIN TRANSACTION;`
-    3.  `UPDATE Accounts SET Balance = Balance - 100 WHERE AccountID = 'A';`
-    4.  `COMMIT;`
-* **How it's Enforced:** The database will **reject** this `UPDATE` statement. Because committing the transaction would violate the `CHECK` constraint (the balance would become -$50), the database prevents the invalid state from ever being written, thus preserving consistency.
-
-#### **I - Isolation (The "Personal Bubble")**
-* **What it is:** Isolation ensures that concurrently executing transactions cannot interfere with each other. From any single transaction's point of view, it appears as if it is the only transaction running on the database.
-* **Analogy:** Students taking an exam in a classroom. Each student works in their own "bubble." They can't see the answers of the student next to them until the exam is over and the papers are graded (committed).
-* **Database Example (Violation):**
-    1.  **Transaction 1 (T1):** `SELECT SUM(Balance) FROM Accounts;` -> Starts calculating the the total wealth in the bank.
-    2.  **Transaction 2 (T2):** A bank transfer from A to B runs concurrently. It debits $100 from A.
-    3.  **T1:** Continues its calculation and now reads Account A's new, lower balance.
-    4.  **T2:** Credits $100 to B and commits.
-    5.  **T1:** Finishes its calculation.
-* **The Problem:** T1's final sum will be off by $100 because it saw the state of the database *during* T2's execution. Proper isolation would have ensured T1 saw a consistent snapshot of the data, either from before T2 started or after T2 finished, but not a mix of both.
-
-#### **D - Durability (The "Permanent Ink")**
-* **What it is:** Durability guarantees that once a transaction has been successfully committed, its changes are permanent and will survive any subsequent system failure, such as a power outage or crash.
-* **Analogy:** Sending a certified letter. Once you receive the delivery confirmation receipt, you have an ironclad guarantee that the letter was delivered. No subsequent event can "undeliver" it.
-* **How it's Enforced:** This is also achieved via the **transaction log**. When a transaction commits, the database's first priority is to write the log records for that transaction to permanent storage (like a hard drive or SSD). The actual data files might be updated in memory first and flushed to disk later, but because the log is safely on disk, the database can always replay the committed transaction to restore the data after a crash.
+- **Goal:** internalize the ACID guarantees and learn how isolation levels, locking, and MVCC protect them.
+- **Style:** consistent with earlier chapters—shared dataset, repeatable lab runs, before versus after tables, diagrams, and tuning checklists.
+- **Takeaway:** a playbook for debugging race conditions, dirty reads, lock storms, or phantom rows before they turn into outages.
 
 ---
 
-### **8.2. Concurrency Control**
+### **8.0. Lab Dataset and Baseline**
 
-Concurrency control is the set of mechanisms a DBMS uses to manage the simultaneous execution of transactions in a way that preserves the isolation property and prevents data corruption.
+We extend the order-management dataset introduced in earlier chapters so that every transaction touches multiple tables. Run the script below to reset the playground before each experiment.
 
-#### **Concurrency Problems**
-When isolation is not properly managed, several classic problems can occur:
+```sql title="lab/create-transaction-lab.sql"
+TRUNCATE TABLE Orders;
+TRUNCATE TABLE Payments;
+TRUNCATE TABLE LedgerEntries;
+TRUNCATE TABLE Inventory;
 
-1.  **Dirty Read:** A transaction reads data that has been modified by another transaction but has **not yet been committed**.
-    * **Example:**
-        * **T1:** `UPDATE Employees SET Salary = 90000 WHERE EmployeeID = 101;`
-        * **T2:** `SELECT Salary FROM Employees WHERE EmployeeID = 101;` -> **Reads $90,000.** T2 now uses this value for a report.
-        * **T1:** `ROLLBACK;` -> The salary change is undone. The actual salary is still $80,000.
-    * **Result:** T2 has made a business decision based on "dirty," incorrect data that never officially existed.
+INSERT INTO Inventory (Sku, OnHand, Reserved)
+VALUES ('SKU-RED', 12, 0), ('SKU-BLUE', 8, 0);
 
-2.  **Non-Repeatable Read:** A transaction reads the same row twice but gets different values each time because another transaction modified and committed the data in between the reads.
-    * **Example:**
-        * **T1:** `SELECT Salary FROM Employees WHERE EmployeeID = 101;` -> **Reads $80,000.**
-        * **T2:** `UPDATE Employees SET Salary = 95000 WHERE EmployeeID = 101; COMMIT;`
-        * **T1:** `SELECT Salary FROM Employees WHERE EmployeeID = 101;` -> **Reads $95,000.**
-    * **Result:** The data T1 is working with is inconsistent within its own lifespan. The first read is no longer repeatable.
+INSERT INTO Orders (OrderID, CustomerID, Sku, Quantity, Status)
+VALUES (501, 'CUST-01', 'SKU-RED', 2, 'Pending'),
+			 (502, 'CUST-01', 'SKU-BLUE', 1, 'Pending');
 
-3.  **Phantom Read:** A transaction runs the same query twice but gets a different set of rows each time because another transaction has inserted or deleted rows that match the query's `WHERE` clause.
-    * **Example:**
-        * **T1:** `SELECT COUNT(*) FROM Employees WHERE DepartmentID = 5;` -> **Result is 10.**
-        * **T2:** `INSERT INTO Employees (..., DepartmentID) VALUES (..., 5); COMMIT;` -> A new employee is added to department 5.
-        * **T1:** `SELECT COUNT(*) FROM Employees WHERE DepartmentID = 5;` -> **Result is now 11.**
-    * **Result:** A "phantom" row has appeared, making the results of the first query inconsistent with the second.
+INSERT INTO Payments (PaymentID, OrderID, Amount, Status)
+VALUES (9001, 501, 199.00, 'Authorized'),
+			 (9002, 502, 99.00, 'Authorized');
 
-#### **Locking Mechanisms**
-The traditional way to prevent concurrency problems is by using locks.
+INSERT INTO LedgerEntries (EntryID, OrderID, EntryType, Amount)
+VALUES (71001, 501, 'Order Pending', 199.00);
+```
 
-* **Shared (S) Lock:** Also called a Read Lock. Multiple transactions can hold a shared lock on the same resource simultaneously. If T1 holds an S lock, other transactions can also get an S lock, but no transaction can get an Exclusive lock.
-* **Exclusive (X) Lock:** Also called a Write Lock. Only one transaction can hold an exclusive lock on a resource at any given time. If T1 holds an X lock, no other transaction can acquire *any* lock (shared or exclusive) on that resource until T1 releases it.
+**Lab Entities Overview**
 
-**Lock Compatibility Matrix**
+| Table           | Purpose                                   | Notable Constraints                         |
+| :-------------- | :----------------------------------------- | :------------------------------------------ |
+| `Inventory`     | Tracks stock levels per SKU               | `CHECK (OnHand >= 0 AND Reserved >= 0)`     |
+| `Orders`        | Customer orders                           | `FOREIGN KEY (Sku) REFERENCES Inventory`   |
+| `Payments`      | Payment authorizations and settlements    | `FOREIGN KEY (OrderID) REFERENCES Orders`  |
+| `LedgerEntries` | Double-entry accounting style audit trail | `FOREIGN KEY (OrderID) REFERENCES Orders`  |
 
-| Lock Held         | Lock Requested: S | Lock Requested: X |
-| :---------------- | :---------------- | :---------------- |
-| **Shared (S)**    | OK                | Wait              |
-| **Exclusive (X)** | Wait              | Wait              |
+**Baseline Lock Footprint (PostgreSQL example, 10 concurrent read txns)**
 
-#### **Transaction Isolation Levels**
-Databases allow you to trade off performance for consistency by choosing an **isolation level**. A stricter level prevents more anomalies but reduces concurrency.
+| Metric                         | Value | Collection Query                                               |
+| :----------------------------- | :---- | :------------------------------------------------------------- |
+| Average transaction duration   | 34 ms | `pg_stat_statements`                                           |
+| Locks held longer than 100 ms  | 0     | `SELECT * FROM pg_locks WHERE granted AND waitstart IS NOT NULL;` |
+| Deadlocks in last 15 minutes   | 0     | `pg_stat_database_conflicts.deadlocks`                         |
 
-| Isolation Level      | Dirty Read  | Non-Repeatable Read | Phantom Read | Common Default                     |
-| :------------------- | :---------- | :------------------ | :----------- | :--------------------------------- |
-| **Read Uncommitted** | Allowed     | Allowed             | Allowed      | Rarely used                        |
-| **Read Committed**   | Not Allowed | Allowed             | Allowed      | **PostgreSQL, Oracle, SQL Server** |
-| **Repeatable Read**  | Not Allowed | Not Allowed         | Allowed      | **MySQL**                          |
-| **Serializable**     | Not Allowed | Not Allowed         | Not Allowed  | Highest level, less common         |
+Use this baseline as the reference point for the experiments that follow.
 
-* **Read Committed (Most Common):** Each statement in a transaction sees a snapshot of the database as it was at the start of that *statement*. This prevents dirty reads but allows non-repeatable and phantom reads. It offers a good balance of performance and consistency.
-* **Serializable:** This is the strictest level. It ensures that transactions execute as if they were running one after another in some serial order. It prevents all anomalies but can significantly reduce concurrency.
+---
 
-#### **Multi-Version Concurrency Control (MVCC)**
-Many modern databases (like PostgreSQL and Oracle) use a more advanced technique called MVCC to achieve high concurrency.
+### **8.1. ACID Guarantees in Practice**
 
-* **The Core Idea:** "Readers don't block writers, and writers don't block readers."
-* **How it Works (Simplified):** When a row is updated, the database doesn't overwrite the old data. Instead, it creates a **new version** of the row. Each transaction is given a "snapshot ID" when it starts. When that transaction reads data, the database shows it the version of the row that was valid at the time of its snapshot, ignoring any newer versions created by other concurrent transactions. This allows read queries to proceed without needing to wait for write locks, dramatically improving performance for mixed read/write workloads.
+We replay each ACID property using the shared dataset. Execute the variations side by side to see which instrumentation surfaces each violation.
+
+| Variation | Script (abridged)                                                                                                                                           | Expected Observation                                                         |
+| :-------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| **Atomicity** | `BEGIN; UPDATE Inventory SET OnHand = OnHand - 2 WHERE Sku = 'SKU-RED'; INSERT INTO LedgerEntries ...; -- simulate crash ROLLBACK;`                      | Inventory count remains 12; orphan ledger row never appears.                 |
+| **Consistency** | `BEGIN; UPDATE Inventory SET OnHand = -5 WHERE Sku = 'SKU-RED'; COMMIT;`                                                                               | `CHECK` constraint rejects commit, transaction aborted.                      |
+| **Isolation** | T1: `BEGIN; SELECT OnHand FROM Inventory WHERE Sku='SKU-RED';` T2: `BEGIN; UPDATE Inventory SET OnHand = OnHand - 10 ...; COMMIT;` T1: `COMMIT;`         | Under `READ COMMITTED`, T1 sees snapshot value of 12 even after T2 commits.  |
+| **Durability** | `BEGIN; UPDATE Payments SET Status = 'Settled' WHERE PaymentID = 9001; COMMIT; -- kill server -- restart`                                              | WAL replays committed update; status remains `Settled`.                      |
+
+**ACID Diagnostic Checklist**
+
+- Atomicity relies on the write-ahead log being flushed before any page write.
+- Consistency hinges on constraints, triggers, and application invariants staying enabled in all paths.
+- Isolation must always be validated at the session isolation level you deploy with; test each level explicitly.
+- Durability depends on durable storage: verify `synchronous_commit` or equivalent settings.
+
+---
+
+### **8.2. Isolation Levels A/B Testing**
+
+We now script the anomalies that isolation levels are designed to prevent. Each experiment starts two sessions: **T1** (observer) and **T2** (actor). Use your client tool to open two connections and paste the respective blocks.
+
+```sql title="Session A: set isolation level"
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+BEGIN;
+SELECT OnHand FROM Inventory WHERE Sku = 'SKU-RED'; -- snapshot 12
+WAITFOR DELAY '00:00:05'; -- or SELECT pg_sleep(5);
+SELECT OnHand FROM Inventory WHERE Sku = 'SKU-RED';
+COMMIT;
+```
+
+```sql title="Session B: concurrent update"
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+BEGIN;
+UPDATE Inventory SET OnHand = OnHand - 4 WHERE Sku = 'SKU-RED';
+INSERT INTO LedgerEntries (EntryID, OrderID, EntryType, Amount)
+VALUES (71002, 501, 'Reserve Stock', 0);
+COMMIT;
+```
+
+**Isolation Level Results Matrix**
+
+| Isolation Level      | Dirty Read | Non-Repeatable Read | Phantom Row | Notes from Lab Run                                            |
+| :------------------- | :--------- | :------------------ | :---------- | :------------------------------------------------------------- |
+| `READ UNCOMMITTED`   | ✅         | ✅                  | ✅          | Use only for diagnostic queries on replicated secondaries.     |
+| `READ COMMITTED`     | 🚫         | ✅                  | ✅          | Most OLTP defaults; pair with retry logic where needed.        |
+| `REPEATABLE READ`    | 🚫         | 🚫                  | ✅          | Protects aggregates across multiple reads.                    |
+| `SERIALIZABLE`       | 🚫         | 🚫                  | 🚫          | Highest safety; expect more rollbacks due to serialization.    |
+
+During `SERIALIZABLE` tests, most engines will abort one of the transactions with a serialization failure. Capture the error text and confirm your retry logic handles it gracefully.
+
+**Before vs After Metrics (10 runs each)**
+
+| Metric                              | Read Committed | Serializable | Delta (%) |
+| :---------------------------------- | :------------- | :----------- | :-------- |
+| Average latency (ms)                | 34             | 79           | +132%     |
+| Serialization failures (count)      | 0              | 4            | —         |
+| Throughput (txns per second)        | 285            | 170          | -40%      |
+
+---
+
+### **8.3. Locking Deep Dive**
+
+Understanding lock scope is the key to diagnosing blocking storms. Use the following pattern to compare row-level versus table-level locking.
+
+```sql title="Force X lock for demo"
+-- Session B
+BEGIN;
+UPDATE Orders
+	 SET Status = 'InProgress'
+ WHERE OrderID = 501;
+-- keep transaction open for 15 seconds
+```
+
+```sql title="Blocked reader"
+-- Session A
+SET TRANSACTION ISOLATION LEVEL READ COMMITTED;
+SELECT * FROM Orders WHERE OrderID = 501; -- waits for Session B to commit
+```
+
+While the block is active, query system views to inspect lock state.
+
+| Engine     | Diagnostic Query                                                                                     | Insight                                 |
+| :--------- | :---------------------------------------------------------------------------------------------------- | :-------------------------------------- |
+| PostgreSQL | `SELECT pid, relation::regclass, mode, granted FROM pg_locks WHERE NOT granted;`                      | Which relation is blocked and by whom.  |
+| SQL Server | `SELECT request_session_id, resource_type, resource_description FROM sys.dm_tran_locks WHERE request_status = 'WAIT';` | Shows whether block is at row or page level. |
+| MySQL      | `SELECT * FROM performance_schema.data_locks;`                                                        | Confirms gap lock vs record lock.       |
+
+**Lock Escalation Trigger (SQL Server)**
+
+```sql
+-- Insert 5k rows inside one transaction to trigger escalation
+BEGIN TRAN;
+INSERT INTO Orders (OrderID, CustomerID, Sku, Quantity, Status)
+SELECT 60000 + ROW_NUMBER() OVER (), 'CUST-MIG', 'SKU-RED', 1, 'Pending'
+FROM sys.all_objects;
+-- Check sys.dm_tran_locks for OBJECT level lock
+ROLLBACK;
+```
+
+Escalation reduces metadata overhead but can serialize unrelated rows. Mitigate by batching or using partition-level locks where available.
+
+---
+
+### **8.4. MVCC Timeline**
+
+Multi-Version Concurrency Control (MVCC) separates readers from writers by creating row versions. This sequence diagram shows how two transactions interact without blocking.
+
+```mermaid
+sequenceDiagram
+		participant T1 as Tx1 Reader
+		participant T2 as Tx2 Writer
+		participant DB as Storage Engine
+		T1->>DB: request Inventory row v1
+		DB-->>T1: return version v1
+		T2->>DB: create version v2 of row
+		T2->>DB: commit v2
+		T1-->>DB: continue using version v1
+		T1->>DB: commit read snapshot
+```
+
+Key behaviors to verify:
+
+- Each row carry version metadata (transaction id, xmin/xmax in PostgreSQL).
+- Vacuum or garbage collection processes reclaim obsolete versions; monitor to avoid table bloat.
+- Long-running read transactions hold onto old versions; set a timeout to avoid filling undo segments.
+
+---
+
+### **8.5. Deadlock Detection and Retry Strategy**
+
+Deadlocks happen when two transactions wait on each other’s locks. Build muscle memory for reproducing and recovering quickly.
+
+```sql title="Session A"
+BEGIN;
+UPDATE Inventory SET Reserved = Reserved + 1 WHERE Sku = 'SKU-RED';
+WAITFOR DELAY '00:00:05'; -- or SELECT pg_sleep(5);
+UPDATE Payments SET Status = 'Settling' WHERE PaymentID = 9001;
+```
+
+```sql title="Session B"
+BEGIN;
+UPDATE Payments SET Status = 'Settling' WHERE PaymentID = 9001;
+WAITFOR DELAY '00:00:05';
+UPDATE Inventory SET Reserved = Reserved + 1 WHERE Sku = 'SKU-RED';
+```
+
+Most engines detect the cycle and kill one session with a deadlock error. Implement retry logic with exponential backoff.
+
+| What to Capture               | Example Query                                                                                 | Why it Matters                                               |
+| :---------------------------- | :-------------------------------------------------------------------------------------------- | :----------------------------------------------------------- |
+| Deadlock graph (SQL Server)   | `EXEC sys.sp_readerrorlog 0, 1, 'deadlock';`                                                  | Identifies victim and lock order.                           |
+| Latest deadlock (PostgreSQL)  | `SELECT jsonb_pretty(last_deadlock_details) FROM pg_stat_activity WHERE last_deadlock IS NOT NULL;` | Shows statements involved; adjust access ordering.          |
+| InnoDB monitor output         | `SHOW ENGINE INNODB STATUS;`                                                                  | Provides lock wait history and innodb_lock_wait_timeout hit. |
+
+Retry strategy checklist:
+
+1. Wrap critical modification blocks in application-level retry loops (3 attempts minimum).
+2. Order DML statements consistently (Inventory first, Payments second) across services.
+3. Use finer-grained indexes to reduce lock overlap.
+
+---
+
+### **8.6. Observability and Guardrails**
+
+Instrument transaction health so alerts fire before customers notice stale balances or timeouts.
+
+| Signal                           | Threshold                           | Tools / Queries                                              |
+| :------------------------------- | :---------------------------------- | :----------------------------------------------------------- |
+| Average lock wait > 1s          | Investigate immediately             | `pg_stat_activity`, `sys.dm_os_waiting_tasks`, `performance_schema.events_waits_summary_global_by_event_name` |
+| Version store usage > 70%       | Increase cleanup frequency          | PostgreSQL `autovacuum`, SQL Server `sys.dm_tran_version_store_space_usage` |
+| Deadlock rate > 5 per hour      | Add retries or re-sequence workload | Database engine alerts + app telemetry                      |
+| Rollback ratio spikes > 10%     | Audit business logic                | Monitor commit vs rollback counters                          |
+
+**Deploy-Ready Checklist**
+
+- [ ] Unit tests simulate serialization failures and ensure retries succeed.
+- [ ] Connection pool sets explicit isolation level (do not rely on driver default).
+- [ ] Background jobs run at lower priority or `READ ONLY` isolation where supported.
+- [ ] WAL/transaction log archival and point-in-time recovery rehearsed quarterly.
+
+Revisit this lab whenever new features introduce multi-table updates or queues. The patterns here help you reason about concurrency bugs before they reach production.
+
