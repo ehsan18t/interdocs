@@ -433,10 +433,10 @@ WHERE AuthorID = 1;
 
 ***Result:*** Both Orwell titles reflect the 10% discount (rounded to two decimals).
 
-| BookID | Title        | New Price |
-| :----- | :----------- | :-------- |
-| 101    | 1984         | 11.69     |
-| 102    | Animal Farm  | 8.09      |
+| BookID | Title       | New Price |
+| :----- | :---------- | :-------- |
+| 101    | 1984        | 11.69     |
+| 102    | Animal Farm | 8.09      |
 
 **Variation C – Updating a table using values from another table**
 Suppose we have a `NewPrices` staging table with price updates.
@@ -591,9 +591,9 @@ WHERE Price > 12 AND Genre <> 'Fantasy'; -- <> means 'not equal to'
 
 ***Result:*** Yields high-priced, non-fantasy titles.
 
-| Title   | Genre           | Price |
-| :------ | :-------------- | :---- |
-| 1984    | Dystopian       | 12.99 |
+| Title      | Genre           | Price |
+| :--------- | :-------------- | :---- |
+| 1984       | Dystopian       | 12.99 |
 | Foundation | Science Fiction | 14.25 |
 
 **Variation D – Pattern matching with `LIKE`**
@@ -793,9 +793,9 @@ ORDER BY
 
 ***Result:*** Only Tolkien’s pre-1950 fantasy classic qualifies.
 
-| Title      | PublicationYear | AuthorFullName   |
-| :--------- | :-------------- | :---------------- |
-| The Hobbit | 1937            | J.R.R. Tolkien   |
+| Title      | PublicationYear | AuthorFullName |
+| :--------- | :-------------- | :------------- |
+| The Hobbit | 1937            | J.R.R. Tolkien |
 
 **Result:** A concise list answering the question directly. Practicing this translation loop makes SQL feel conversational.
 
