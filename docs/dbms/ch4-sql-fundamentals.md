@@ -70,13 +70,13 @@ To make the examples predictable we will rely on the same miniature library data
 
 **`Books` (titles in our catalogue)**
 
-| BookID | Title                  | PublicationYear | AuthorID | Genre            | Price |
-| :----- | :--------------------- | :-------------- | :------- | :--------------- | :---- |
-| 101    | 1984                   | 1949            | 1        | Dystopian        | 12.99 |
-| 102    | Animal Farm            | 1945            | 1        | Political Satire |  8.99 |
-| 201    | The Hobbit             | 1937            | 2        | Fantasy          | 10.50 |
-| 202    | The Lord of the Rings  | 1954            | 2        | Fantasy          | 25.00 |
-| 301    | Foundation             | 1951            | 3        | Science Fiction  | 14.25 |
+| BookID | Title                 | PublicationYear | AuthorID | Genre            | Price |
+| :----- | :-------------------- | :-------------- | :------- | :--------------- | :---- |
+| 101    | 1984                  | 1949            | 1        | Dystopian        | 12.99 |
+| 102    | Animal Farm           | 1945            | 1        | Political Satire | 8.99  |
+| 201    | The Hobbit            | 1937            | 2        | Fantasy          | 10.50 |
+| 202    | The Lord of the Rings | 1954            | 2        | Fantasy          | 25.00 |
+| 301    | Foundation            | 1951            | 3        | Science Fiction  | 14.25 |
 
 **`BookLoans` (circulation history)**
 
@@ -98,11 +98,11 @@ DDL statements are used to **define and manage the database structure or schema*
 #### **`CREATE`**
 Used to create new database objects like tables, indexes, or views. The most common use is `CREATE TABLE`.
 
-| Scenario | Goal | Key Difference |
-| :-- | :-- | :-- |
-| A | Minimal lookup table | Fixed list of genres with a surrogate key |
-| B | Table with defaults and check constraint | Automatically populate timestamps and enforce valid price |
-| C | Table created from query | Materialize a snapshot using `CREATE TABLE … AS SELECT` |
+| Scenario | Goal                                     | Key Difference                                            |
+| :------- | :--------------------------------------- | :-------------------------------------------------------- |
+| A        | Minimal lookup table                     | Fixed list of genres with a surrogate key                 |
+| B        | Table with defaults and check constraint | Automatically populate timestamps and enforce valid price |
+| C        | Table created from query                 | Materialize a snapshot using `CREATE TABLE … AS SELECT`   |
 
 **Scenario A – create a lookup table**
 
@@ -117,10 +117,10 @@ CREATE TABLE Genres (
 
 **Inside `Genres` right after creation**
 
-| Column   | Data Type  | Constraint |
-| :------- | :--------- | :--------- |
-| GenreID  | INT        | PRIMARY KEY |
-| GenreName| VARCHAR(50)| UNIQUE, NOT NULL |
+| Column    | Data Type   | Constraint       |
+| :-------- | :---------- | :--------------- |
+| GenreID   | INT         | PRIMARY KEY      |
+| GenreName | VARCHAR(50) | UNIQUE, NOT NULL |
 
 **Scenario B – table with column defaults and validation**
 
@@ -139,13 +139,13 @@ CREATE TABLE BookOrders (
 
 **Inside `BookOrders` after creation**
 
-| Column    | Type          | Default / Constraint |
-| :-------- | :------------ | :------------------- |
-| OrderID   | SERIAL        | Auto-incrementing PK |
-| BookID    | INT           | FK to `Books.BookID` |
-| OrderedAt | TIMESTAMP     | Defaults to current time |
-| Copies    | INT           | 1 ≤ Copies ≤ 25 |
-| UnitPrice | DECIMAL(6,2)  | Must be non-negative |
+| Column    | Type         | Default / Constraint     |
+| :-------- | :----------- | :----------------------- |
+| OrderID   | SERIAL       | Auto-incrementing PK     |
+| BookID    | INT          | FK to `Books.BookID`     |
+| OrderedAt | TIMESTAMP    | Defaults to current time |
+| Copies    | INT          | 1 ≤ Copies ≤ 25          |
+| UnitPrice | DECIMAL(6,2) | Must be non-negative     |
 
 **Scenario C – create a materialized snapshot**
 
@@ -169,21 +169,21 @@ WHERE b.Genre LIKE '%Fantasy%';
 
 Used to modify an existing database object. You can add, delete, or modify columns in an existing table.
 
-| Scenario | Goal | Inside-the-table effect |
-| :-- | :-- | :-- |
-| A | Add a column with a default | Existing rows receive the default value |
-| B | Rename a column | Column metadata changes, data stays put |
-| C | Add a foreign key later | Validates existing data before enforcing link |
+| Scenario | Goal                        | Inside-the-table effect                       |
+| :------- | :-------------------------- | :-------------------------------------------- |
+| A        | Add a column with a default | Existing rows receive the default value       |
+| B        | Rename a column             | Column metadata changes, data stays put       |
+| C        | Add a foreign key later     | Validates existing data before enforcing link |
 
 **Scenario A – add a loyalty flag to `Borrowers`**
 
 _Before altering:_
 
-| BorrowerID | Name           | City        |
-| :--------- | :------------- | :---------- |
-| 1          | Alicia Taylor  | Seattle     |
-| 2          | Malik Phillips | Portland    |
-| 3          | Priya Singh    | Vancouver   |
+| BorrowerID | Name           | City      |
+| :--------- | :------------- | :-------- |
+| 1          | Alicia Taylor  | Seattle   |
+| 2          | Malik Phillips | Portland  |
+| 3          | Priya Singh    | Vancouver |
 
 ```sql
 ALTER TABLE Borrowers
@@ -241,10 +241,10 @@ DROP TABLE Authors CASCADE;
 
 Some databases support `CASCADE`, which also removes dependent tables such as `Books`. Always check dependencies first:
 
-| Object Type | Name   | Depends On |
-| :-- | :-- | :-- |
-| Table       | Books  | Authors    |
-| View        | vw_AuthorCounts | Books |
+| Object Type | Name            | Depends On |
+| :---------- | :-------------- | :--------- |
+| Table       | Books           | Authors    |
+| View        | vw_AuthorCounts | Books      |
 
 Dropping `Authors` without a plan leaves you with missing data and broken queries.
 
@@ -254,11 +254,11 @@ Dropping `Authors` without a plan leaves you with missing data and broken querie
 
 Used to quickly delete all rows from a table, but the table structure itself remains. It's much faster than `DELETE` for wiping a table clean.
 
-| Step | Command | Inside the table |
-| :-- | :-- | :-- |
-| Before | — | `Books` has 5 rows |
+| Step    | Command                 | Inside the table                                                   |
+| :------ | :---------------------- | :----------------------------------------------------------------- |
+| Before  | —                       | `Books` has 5 rows                                                 |
 | Execute | `TRUNCATE TABLE Books;` | Storage is deallocated; rows removed without logging each deletion |
-| After | — | `Books` has 0 rows, but columns and constraints remain |
+| After   | —                       | `Books` has 0 rows, but columns and constraints remain             |
 
 > **Contrast:** `TRUNCATE` cannot be used on a table referenced by a foreign key (unless you disable or drop the FK temporarily). Use `DELETE` when you need fine-grained control or logging.
 
@@ -283,10 +283,10 @@ VALUES (401, 'I, Robot', 1950, 3, 'Science Fiction', 11.75);
 
 _After:_
 
-| BookID | Title    | PublicationYear | AuthorID | Genre            | Price |
-| :----- | :------- | :-------------- | :------- | :--------------- | :---- |
-| … | … | … | … | … | … |
-| 401    | I, Robot | 1950            | 3        | Science Fiction  | 11.75 |
+| BookID | Title    | PublicationYear | AuthorID | Genre           | Price |
+| :----- | :------- | :-------------- | :------- | :-------------- | :---- |
+| …      | …        | …               | …        | …               | …     |
+| 401    | I, Robot | 1950            | 3        | Science Fiction | 11.75 |
 
 **Variation B – insert multiple rows at once**
 
@@ -345,7 +345,7 @@ Suppose we have a `NewPrices` staging table.
 | BookID | NewPrice |
 | :----- | :------- |
 | 101    | 11.50    |
-| 201    |  9.75    |
+| 201    | 9.75     |
 
 ```sql
 UPDATE Books AS b
@@ -407,11 +407,11 @@ Used to query the database and retrieve data that matches criteria that you spec
 
 | BookID | Title                 | Genre            | Price | FirstPublicationYear |
 | :----- | :-------------------- | :--------------- | :---- | :------------------- |
-| 101    | 1984                  | Dystopian        | 12.99 | 1949 |
-| 102    | Animal Farm           | Political Satire |  8.99 | 1945 |
-| 201    | The Hobbit            | Fantasy          | 10.50 | 1937 |
-| 202    | The Lord of the Rings | Fantasy          | 25.00 | 1954 |
-| 301    | Foundation            | Science Fiction  | 14.25 | 1951 |
+| 101    | 1984                  | Dystopian        | 12.99 | 1949                 |
+| 102    | Animal Farm           | Political Satire | 8.99  | 1945                 |
+| 201    | The Hobbit            | Fantasy          | 10.50 | 1937                 |
+| 202    | The Lord of the Rings | Fantasy          | 25.00 | 1954                 |
+| 301    | Foundation            | Science Fiction  | 14.25 | 1951                 |
 
 **Variation A – project everything**
 
@@ -532,12 +532,12 @@ _Inside the result set:_ `PriceDelta` shows how each price compares to the overa
 
 Let’s pretend a product manager asks, “Which fantasy books were published before 1950 and who wrote them?” Translate it into SQL step by step:
 
-| Thought Process | SQL Translation |
-| :-- | :-- |
-| Identify tables | We need `Books` plus `Authors` for names |
-| Filter genre | `WHERE Genre = 'Fantasy' OR Genre = 'High Fantasy'` |
-| Filter year | `AND PublicationYear < 1950` |
-| Display columns | `SELECT Title, PublicationYear, Authors.LastName` |
+| Thought Process     | SQL Translation                                     |
+| :------------------ | :-------------------------------------------------- |
+| Identify tables     | We need `Books` plus `Authors` for names            |
+| Filter genre        | `WHERE Genre = 'Fantasy' OR Genre = 'High Fantasy'` |
+| Filter year         | `AND PublicationYear < 1950`                        |
+| Display columns     | `SELECT Title, PublicationYear, Authors.LastName`   |
 | Tie tables together | `JOIN Authors ON Books.AuthorID = Authors.AuthorID` |
 
 ```sql

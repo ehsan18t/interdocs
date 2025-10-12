@@ -29,15 +29,15 @@ flowchart LR
     class Strategy,Requirements,Design,Implementation,Testing,Deployment,Maintenance phase;
 ```
 
-| Phase | Key Artifact | Guiding Question |
-| :-- | :-- | :-- |
-| Strategy | Vision statement, budget estimate | Why are we building this and is it feasible? |
-| Requirements | User stories, business rules | What information must the system capture? |
-| Design | ER diagrams, schema docs | How should the data be structured? |
-| Implementation | DDL scripts, migrations | How do we build and version the schema? |
-| Testing | Test plans, sample datasets | Does the schema behave as expected? |
-| Deployment | Release checklist | How do we cut over safely? |
-| Maintenance | Monitoring dashboards | How do we keep it healthy over time? |
+| Phase          | Key Artifact                      | Guiding Question                             |
+| :------------- | :-------------------------------- | :------------------------------------------- |
+| Strategy       | Vision statement, budget estimate | Why are we building this and is it feasible? |
+| Requirements   | User stories, business rules      | What information must the system capture?    |
+| Design         | ER diagrams, schema docs          | How should the data be structured?           |
+| Implementation | DDL scripts, migrations           | How do we build and version the schema?      |
+| Testing        | Test plans, sample datasets       | Does the schema behave as expected?          |
+| Deployment     | Release checklist                 | How do we cut over safely?                   |
+| Maintenance    | Monitoring dashboards             | How do we keep it healthy over time?         |
 
 ### **3.2. Data Modeling: From Idea to Blueprint**
 

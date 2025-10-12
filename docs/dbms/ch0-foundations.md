@@ -8,12 +8,12 @@ If you are completely new to databases, it helps to build the right mental model
 
 ## Databases by Analogy
 
-| Real World | Database World | Why It Matters |
-| :-- | :-- | :-- |
-| A public library with shelves, index cards, and librarians | A DBMS with tables, indexes, and query planners | Shows how structure plus a retrieval strategy make huge collections usable |
-| Airport traffic control | Concurrency control & transactions | Highlights why coordination is vital when many actors change shared resources |
-| City zoning laws | Data constraints & schemas | Rules prevent chaotic construction; schemas keep data predictable |
-| Fire drills and insurance policies | Backups and disaster recovery | Preparedness is the only guarantee when things go wrong |
+| Real World                                                 | Database World                                  | Why It Matters                                                                |
+| :--------------------------------------------------------- | :---------------------------------------------- | :---------------------------------------------------------------------------- |
+| A public library with shelves, index cards, and librarians | A DBMS with tables, indexes, and query planners | Shows how structure plus a retrieval strategy make huge collections usable    |
+| Airport traffic control                                    | Concurrency control & transactions              | Highlights why coordination is vital when many actors change shared resources |
+| City zoning laws                                           | Data constraints & schemas                      | Rules prevent chaotic construction; schemas keep data predictable             |
+| Fire drills and insurance policies                         | Backups and disaster recovery                   | Preparedness is the only guarantee when things go wrong                       |
 
 > **Mental shortcut:** When you can explain a database concept by pointing to something in the physical world, you understand it well enough to teach it.
 
@@ -65,13 +65,13 @@ Keep this flow in mind: each chapter pushes you from left to right. If you feel 
 
 ## Quick Reference Glossary
 
-| Term | Plain-English Definition |
-| :-- | :-- |
-| Schema | The structural blueprint for how data is organized |
-| Record (Row/Tuple) | A single real-world instance captured in the database |
-| Primary Key | The official unique identifier for a record |
-| Transaction | A bundle of operations that succeed or fail together |
-| Index | A fast lookup aid, like the index at the back of a book |
+| Term               | Plain-English Definition                                |
+| :----------------- | :------------------------------------------------------ |
+| Schema             | The structural blueprint for how data is organized      |
+| Record (Row/Tuple) | A single real-world instance captured in the database   |
+| Primary Key        | The official unique identifier for a record             |
+| Transaction        | A bundle of operations that succeed or fail together    |
+| Index              | A fast lookup aid, like the index at the back of a book |
 
 ## Ready to Continue
 
