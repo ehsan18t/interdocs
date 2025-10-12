@@ -1,14 +1,7 @@
 ---
 sidebar_position: 2
-title: Part 2 · Relational Model and Design
+title: Chapter 2 · Core Concepts of the Relational Model
 ---
-Welcome to Part 2. Having established what data and databases are, we now dive into the most influential and enduring paradigm in database history: the **Relational Model**. This is the theoretical and logical foundation upon which titans like PostgreSQL, MySQL, and SQL Server are built.
-
-In this part, you will move from abstract concepts to concrete principles. We will cover the core components of the relational model, such as tables, keys, and constraints. Then, we will transition into the art and science of **database design**, exploring how to translate real-world requirements into a clean, efficient, and reliable database schema using techniques like ER modeling and Normalization. Mastering these concepts is non-negotiable for anyone serious about database development or administration.
-
----
-
-## **Chapter 2: Core Concepts of the Relational Model**
 
 ### **2.1. Tables, Rows, and Columns**
 

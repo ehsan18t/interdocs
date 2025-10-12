@@ -1,14 +1,7 @@
 ---
 sidebar_position: 6
-title: Part 4 · Database Administration Essentials
+title: Chapter 6 · Core DBA Responsibilities
 ---
-Welcome to Part 4. So far, our journey has focused on designing database structures (`Part 2`) and communicating with them (`Part 3`). Now, we shift our focus to the crucial discipline of **managing the database system itself**. This is the world of the Database Administrator (DBA).
-
-A DBA's role is to be the guardian of the database, ensuring its performance, availability, security, and recoverability. This part of the curriculum covers the essential, day-to-day responsibilities and the advanced techniques required to keep a database running smoothly and efficiently.
-
----
-
-## **Chapter 6: Core DBA Responsibilities**
 
 This chapter covers the foundational duties that form the core of a DBA's role. These are the non-negotiable tasks that ensure a database environment is stable, secure, and prepared for failure.
 

@@ -15,15 +15,12 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     "intro",
-    "outline",
     {
       type: "category",
       label: "Database Foundations",
       link: {
-        type: "generated-index",
-        title: "Database Foundations",
-        description:
-          "End-to-end curriculum for mastering database systems in interview settings.",
+        type: "doc",
+        id: "outline",
       },
       items: [
         "dbms/ch1-introduction",

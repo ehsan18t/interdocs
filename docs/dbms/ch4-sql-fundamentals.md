@@ -1,14 +1,7 @@
 ---
 sidebar_position: 4
-title: Part 3 · SQL Fundamentals
+title: Chapter 4 · SQL Fundamentals
 ---
-Welcome to Part 3, where we transition from theory to practice. Having designed our database, we now need a way to communicate with it. That language is **SQL (Structured Query Language)**. SQL is the universal standard for managing and querying relational databases.
-
-This chapter focuses on the absolute fundamentals. We will break SQL down into its sub-languages (DDL, DML, DQL, etc.) and provide clear, practical examples for each core command. By the end, you will be able to create database structures, add and modify data, and ask questions of your database.
-
----
-
-## **Chapter 4: SQL Fundamentals**
 
 ### **4.1. Introduction to SQL**
 
