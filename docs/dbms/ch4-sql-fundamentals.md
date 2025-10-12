@@ -13,6 +13,31 @@ SQL, often pronounced "sequel" or "S-Q-L," stands for Structured Query Language.
 * **Powerful:** It can handle vast amounts of data and complex queries with concise commands.
 * **Accessible:** The syntax is relatively easy to read and understand, resembling natural English.
 
+```mermaid
+mindmap
+  root((SQL))
+    DDL
+      CREATE
+      ALTER
+      DROP
+      TRUNCATE
+    DML
+      INSERT
+      UPDATE
+      DELETE
+    DQL
+      SELECT
+      ORDER_BY
+      WHERE
+    DCL
+      GRANT
+      REVOKE
+    TCL
+      COMMIT
+      ROLLBACK
+      SAVEPOINT
+```
+
 ---
 
 ### **4.2. Data Definition Language (DDL)**

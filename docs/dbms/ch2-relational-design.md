@@ -62,6 +62,20 @@ Here, `DepartmentID` in the `Employees` table is a foreign key that creates a re
 
 This structure ensures that an employee can only be assigned to a department that actually exists.
 
+```mermaid
+erDiagram
+    DEPARTMENTS ||--o{ EMPLOYEES : "assigns"
+    DEPARTMENTS {
+        int DepartmentID PK
+        string DepartmentName
+    }
+    EMPLOYEES {
+        int EmployeeID PK
+        string FirstName
+        int DepartmentID FK
+    }
+```
+
 > **Common Pitfall: Using Natural vs. Surrogate Keys.** A "natural" key is an attribute that already exists in the real world (e.g., a Social Security Number). A "surrogate" key is an artificial key with no business meaning (e.g., an auto-incrementing `EmployeeID`). Beginners often use natural keys as primary keys, but this is risky. What if the natural key changes (e.g., a person changes their name)? What if privacy laws require it to be encrypted? It's almost always safer and more robust to use a surrogate primary key.
 
 ### **2.3. Constraints: The Rules of the Database**

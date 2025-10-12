@@ -17,6 +17,18 @@ Building a database is an engineering process, not just an ad-hoc task. The DDLC
 6.  **Deployment:** The tested database is released for operational use. This can be a complex process involving data migration from an old system to the new one, and requires careful planning to minimize downtime.
 7.  **Maintenance:** The longest phase of the lifecycle. This involves ongoing tasks like monitoring performance, regular backups, applying security patches, optimizing queries, and making schema modifications as business requirements evolve.
 
+```mermaid
+flowchart LR
+    Strategy["Strategy & Planning"] --> Requirements["Requirements Analysis"]
+    Requirements --> Design["Design<br/>Conceptual / Logical / Physical"]
+    Design --> Implementation
+    Implementation --> Testing
+    Testing --> Deployment
+    Deployment --> Maintenance
+    classDef phase fill:#eef6ff,stroke:#2a63c9,stroke-width:2px,color:#0f1a33;
+    class Strategy,Requirements,Design,Implementation,Testing,Deployment,Maintenance phase;
+```
+
 ### **3.2. Data Modeling: From Idea to Blueprint**
 
 Data modeling is the process of creating a visual representation (a data model) of the data objects in a system and the relationships between them. This process is broken down into three stages of increasing detail, moving from the abstract to the concrete.
@@ -46,6 +58,34 @@ A detailed, technology-agnostic blueprint. This is where the core design work ha
     * Attributes: CourseID (Primary Key), CourseTitle, Credits, ProfessorID (Foreign Key to Professor)
 * **Resolving M:N Relationship:** Students and Courses have a many-to-many relationship. We create a new "linking" table.
     * **Enrollment Entity:** A new table with a composite primary key of (StudentID, CourseID). It might also have an attribute like `Grade`.
+
+```mermaid
+erDiagram
+    PROFESSOR ||--o{ COURSE : teaches
+    COURSE ||--o{ ENROLLMENT : has
+    STUDENT ||--o{ ENROLLMENT : enrolls
+    PROFESSOR {
+        int ProfessorID PK
+        string FirstName
+        string LastName
+    }
+    STUDENT {
+        int StudentID PK
+        string FirstName
+        string LastName
+    }
+    COURSE {
+        string CourseID PK
+        string CourseTitle
+        int Credits
+        int ProfessorID FK
+    }
+    ENROLLMENT {
+        int StudentID FK
+        string CourseID FK
+        string Grade
+    }
+```
 
 **3. Physical Data Model**
 
@@ -199,3 +239,22 @@ Now our data is in 3NF. Redundancy is minimized, and anomalies are eliminated. E
 ### Denormalization
 
 Sometimes, for performance reasons (especially in read-heavy data warehouses), designers will intentionally violate normalization rules. This process, called denormalization, reduces the number of joins needed for a query but re-introduces redundancy. It's a deliberate trade-off that should be made carefully and only after profiling performance.
+
+#### When Denormalization Helps
+- **Analytics and reporting:** Dashboards that aggregate the same metrics thousands of times per hour benefit from pre-computed totals or flattened dimension tables.
+- **Operational read hot-spots:** If a critical API endpoint must serve data with sub-millisecond latency, duplicating a few values can remove expensive joins.
+- **Distributed systems:** Wide-column or document stores often favor denormalized records to minimize cross-partition lookups.
+
+#### Common Denormalization Patterns
+- **Duplicated attributes:** Copying descriptive columns (e.g., `CustomerName`) onto a fact table to avoid a join during reads.
+- **Pre-computed aggregates:** Storing running totals, counts, or averages in a summary table or materialized view that is refreshed on a schedule.
+- **Flattened hierarchies:** Embedding parent/child identifiers in the same row (such as storing `DepartmentPath = "Corporate > Engineering > Platform"`).
+- **Derived lookups:** Materializing frequently used calculations (like `FullAddress`) so client code does not reassemble them on every request.
+
+#### Guardrails and Mitigations
+- **Document the duplication:** Note every column that is denormalized and the authoritative source it mirrors. This avoids divergent updates months later.
+- **Automate synchronization:** Use triggers, stored procedures, ETL jobs, or change data capture to keep duplicates consistent.
+- **Monitor drift:** Regularly compare denormalized tables against their normalized sources to catch inconsistencies.
+- **Favor read replicas or caches first:** Sometimes adding an index, using a read replica, or caching results is sufficient without altering the schema.
+
+> **Rule of Thumb:** Normalize first for correctness, measure performance, and only denormalize surgically with a rollback plan.

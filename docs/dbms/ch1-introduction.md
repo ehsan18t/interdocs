@@ -38,6 +38,15 @@ To truly understand the value of data, it's crucial to see how it transforms int
 
 The goal of any database system is to effectively manage the lower levels of this pyramid (Data and Information) to enable the discovery of the upper levels (Knowledge and Wisdom).
 
+```mermaid
+flowchart TD
+    Data["Data<br/>Raw facts"] --> Information["Information<br/>Contextualized data"]
+    Information --> Knowledge["Knowledge<br/>Patterns & insights"]
+    Knowledge --> Wisdom["Wisdom<br/>Judgment-driven decisions"]
+    classDef base fill:#f5f7ff,stroke:#6573c3,stroke-width:2px,color:#1b1f3b;
+    class Data,Information,Knowledge,Wisdom base;
+```
+
 ### **Types of Data Structures**
 
 Data doesn't just exist; it has a shape. Understanding this shape is critical to choosing the right tools to manage it.
@@ -112,6 +121,16 @@ A DBMS is a sophisticated piece of software responsible for:
 ## **1.4. Evolution of Databases**
 
 The databases we use today are the result of over 60 years of evolution, driven by changing business needs and technological advancements.
+
+```mermaid
+timeline
+    title Evolution of Database Systems
+    1960s : Hierarchical & Network models
+    1970s : Codd introduces the relational model + SQL
+    1990s/2000s : Web scale drives NoSQL adoption
+    2010s : NewSQL blends horizontal scale with ACID guarantees
+    Today : Polyglot persistence and cloud-native databases
+```
 
 
 

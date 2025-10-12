@@ -47,6 +47,17 @@ Database security is a multi-layered practice aimed at protecting the database f
 #### **User and Role Management**
 Instead of granting permissions to individual users one by one, it's best practice to create **roles** that represent job functions. You grant permissions to the role, and then assign users to that role.
 
+```mermaid
+graph TD
+  subgraph SecurityLayers["Security Layers"]
+    A["Identity Provider<br/>Authentication"] --> B["Database Roles<br/>Authorization"]
+    B --> C["Object Permissions<br/>(Tables · Views · Procedures)"]
+    C --> D["Auditing & Monitoring"]
+  D --> E["Encryption & Network Controls"]
+  end
+  style SecurityLayers fill:#f6f9ff,stroke:#264f9c,stroke-width:2px,color:#102141
+```
+
 **Example:** Let's create roles for an `analyst` and a `developer`.
 
 ```sql
@@ -126,6 +137,15 @@ A backup is a copy of database data taken at a specific point in time. A DBA's m
 #### **Point-in-Time Recovery (PITR)**
 
 By using a full backup combined with a continuous stream of transaction log backups, a DBA can restore a database to a very specific moment in time. This is critical for recovering right up to the moment before a disaster (like an accidental `DROP TABLE` command) occurred.
+
+```mermaid
+graph LR
+  FullBackup["Full Backup<br/>Weekend"] --> Differential["Optional Differential Backups<br/>Nightly"]
+  Differential --> LogChain["Transaction Log Backups<br/>Every 15 min"]
+  LogChain --> Restore["Point-in-Time Restore"]
+  classDef step fill:#eef8f2,stroke:#2f855a,stroke-width:2px,color:#123524;
+  class FullBackup,Differential,LogChain,Restore step;
+```
 
 **Example Scenario:**
 

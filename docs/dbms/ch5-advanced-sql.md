@@ -12,6 +12,33 @@ For the examples in this chapter, we will use a slightly more complex database s
 * **`Projects`**: Stores project information.
 * **`Employee_Projects`**: A linking table to assign employees to projects.
 
+```mermaid
+erDiagram
+  DEPARTMENTS ||--o{ EMPLOYEES : oversees
+  EMPLOYEES ||--o{ EMPLOYEE_PROJECTS : works_on
+  PROJECTS ||--o{ EMPLOYEE_PROJECTS : includes
+  EMPLOYEES ||--o{ EMPLOYEES : manages
+  DEPARTMENTS {
+    int DepartmentID PK
+    string DepartmentName
+  }
+  EMPLOYEES {
+    int EmployeeID PK
+    string FirstName
+    int DepartmentID FK
+    int ManagerID FK
+  }
+  PROJECTS {
+    int ProjectID PK
+    string ProjectName
+  }
+  EMPLOYEE_PROJECTS {
+    int EmployeeID FK
+    int ProjectID FK
+    string Role
+  }
+```
+
 ---
 
 ### **5.1. Filtering and Operators**
