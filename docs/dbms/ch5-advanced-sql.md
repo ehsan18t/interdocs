@@ -3,13 +3,68 @@ sidebar_position: 5
 title: Chapter 5 · Intermediate and Advanced SQL
 ---
 
-With fundamentals in place, this chapter shows how the same SQL keywords behave differently depending on predicates, data shape, and execution context. For each concept we reuse a single dataset, run multiple variations of each keyword, and peek at the table state or result set so you can see exactly what changed.
 
----
+With the fundamentals in place, this chapter explores how core SQL concepts can be combined to solve complex problems. We'll examine how keywords behave differently depending on predicates, data shape, and execution context. For each concept, we'll reuse a single, consistent dataset and run multiple variations of each keyword. By observing the "before and after" state of the tables or result sets, you can see exactly what changed and why.
+
+-----
 
 ### **5.0. Practice Dataset for All Examples**
 
-Unless a variation explicitly modifies data, assume the tables reset to the baseline below before each example.
+This corporate dataset models employees, departments, and projects. It's the sandbox we'll use for every query in this chapter. Unless a variation explicitly modifies data, assume the tables are reset to this baseline state before each example runs.
+
+:::tip Quick Briefing
+Treat these tables as your reference lab. `Employees` connects to everything else, `Departments` anchors organization structure, and `Employee_Projects` carries the many-to-many relationships. Keeping the seed data intact ensures each example highlights only the clause under discussion.
+:::
+
+:::info Data Model Relationships
+Think of these relationships as the wiring that connects our data.
+
+  * **Employees to Departments:** A one-to-many relationship (one department has many employees). `Employees.DepartmentID` is a Foreign Key to `Departments.DepartmentID`.
+  * **Employees to Employees:** A self-referencing relationship for organizational hierarchy. `Employees.ManagerID` is a Foreign Key to `Employees.EmployeeID`.
+  * **Departments to Departments:** A self-referencing relationship for parent/subsidiary departments. `Departments.ParentDepartmentID` is a Foreign Key to `Departments.DepartmentID`.
+  * **Employees to Projects:** A many-to-many relationship, managed through the `Employee_Projects` bridging table.
+    :::
+
+<!-- end list -->
+
+```mermaid
+erDiagram
+    Departments ||--o{ Employees : "has"
+    Departments ||--o{ Departments : "is parent of"
+    Employees ||--o{ Employees : "manages"
+    Employees ||--|{ Employee_Projects : "is assigned to"
+    Projects ||--|{ Employee_Projects : "has assigned"
+    Departments ||--o{ Projects : "owns"
+
+    Departments {
+        int DepartmentID PK
+        varchar DepartmentName
+        decimal Budget
+        int ParentDepartmentID FK
+    }
+    Employees {
+        int EmployeeID PK
+        varchar FirstName
+        varchar LastName
+        int DepartmentID FK
+        int ManagerID FK
+        date HireDate
+        decimal Salary
+    }
+    Projects {
+        int ProjectID PK
+        varchar ProjectName
+        date StartDate
+        date EndDate
+        int OwningDepartmentID FK
+    }
+    Employee_Projects {
+        int EmployeeID PK, FK
+        int ProjectID PK, FK
+        varchar Role
+        int AllocationPercent
+    }
+```
 
 **`Departments`**
 
@@ -34,7 +89,9 @@ Unless a variation explicitly modifies data, assume the tables reset to the base
 | 108        | Hugo      | Martins  | 30           | NULL      | 2014-06-30 | 95000  |
 | 109        | Irina     | Petrov   | NULL         | 101       | 2022-04-12 | 54000  |
 
-> `ManagerID = NULL` indicates a top-level manager. `DepartmentID = NULL` indicates a central contractor not assigned to a department.
+:::note Data Hints
+`ManagerID IS NULL` indicates a top-level manager. `DepartmentID IS NULL` indicates a central contractor not assigned to a department.
+:::
 
 **`Projects`**
 
@@ -45,7 +102,7 @@ Unless a variation explicitly modifies data, assume the tables reset to the base
 | 503       | Lighthouse AI    | 2023-05-20 | NULL       | 40                 |
 | 504       | Harmony Outreach | 2023-01-10 | 2023-12-10 | 30                 |
 
-**`Employee_Projects`**
+**`Employee_Projects` (Bridging Table)**
 
 | EmployeeID | ProjectID | Role         | AllocationPercent |
 | :--------- | :-------- | :----------- | :---------------- |
@@ -59,15 +116,28 @@ Unless a variation explicitly modifies data, assume the tables reset to the base
 | 108        | 504       | Exec Sponsor | 15                |
 | 109        | 502       | Contractor   | 40                |
 
----
+-----
 
-### **5.1. Filtering and Operators**
+### **5.1. Advanced Filtering & Operators**
 
-`WHERE` predicates turn huge tables into focused result sets. Changing an operator or boundary can quietly reshape the answer.
+`WHERE` predicates are the primary tool for turning huge tables into focused result sets. A small change to an operator or boundary can completely reshape the answer. Think of these operators as specialized filters for your data.
 
-#### **`BETWEEN` (inclusive bounds)**
+:::tip Quick Briefing
+Filtering operators decide which rows even make it to later SQL clauses. `BETWEEN` sets numeric/date fences, `IN` checks list membership, `LIKE` matches patterns, and `IS NULL` handles missing values. Master these to scope queries before you spend time aggregating or joining.
+:::
 
-**Variation A – calendar decade window**
+| Operator  | Core Purpose                       | Watch Out For                          |
+| :-------- | :--------------------------------- | :------------------------------------- |
+| `BETWEEN` | Inclusive lower/upper bounds       | Timestamps include midnight only       |
+| `IN`      | Match against discrete value lists | Mixed data types can break comparisons |
+| `LIKE`    | Pattern match strings              | Collations/case sensitivity vary       |
+| `IS NULL` | Safely test absence of a value     | `= NULL` never works                   |
+
+#### **`BETWEEN` (Inclusive Bounds)**
+
+**Analogy:** `BETWEEN` is like setting up a fence with two posts; anything on the posts or in between them is included. It's a convenient shorthand for `column >= lower_bound AND column <= upper_bound`.
+
+**Variation A – Calendar date window**
 
 ```sql
 SELECT EmployeeID, FirstName, HireDate
@@ -75,31 +145,37 @@ FROM Employees
 WHERE HireDate BETWEEN '2015-01-01' AND '2019-12-31';
 ```
 
-_Result:_ Returns employees hired from 2015 through 2019 inclusive (Amina, Bruno, Carmen, Erin). If you change the upper bound to `'2019-11-20'`, Carmen disappears.
+***Result:*** Returns employees hired from the first day of 2015 through the last day of 2019 (**Amina, Bruno, Erin, Carmen**). If you change the upper bound to `'2019-11-20'`, Carmen (hired 2019-11-21) would be excluded.
 
-**Variation B – salary band check**
+**Variation B – Salary band check**
 
 ```sql
-SELECT EmployeeID, Salary
+SELECT EmployeeID, FirstName, Salary
 FROM Employees
 WHERE Salary BETWEEN 70000 AND 90000;
 ```
 
-_Result set:_ Employees 102, 104, 105, 106. Lowering the minimum to `65000` pulls in Faisal; raising the maximum to `100000` adds Amina.
+***Result:*** Returns employees with salaries in the specified range: \*\*Erin ($72k), Deepak ($76k), Bruno ($82k)**. Lowering the minimum to `65000` adds Faisal ($68k) and Carmen ($69k).
 
-#### **`IN` (explicit and dynamic lists)**
+:::caution `BETWEEN` with Timestamps
+Be careful when using `BETWEEN` on columns that include a time component (like `DATETIME` or `TIMESTAMP`). A filter like `BETWEEN '2025-10-12' AND '2025-10-12'` will only match records from midnight `2025-10-12 00:00:00`. A safer pattern is often `WHERE date_col >= '2025-10-12' AND date_col < '2025-10-13'`.
+:::
 
-**Variation A – explicit list**
+#### **`IN` (Membership Testing)**
+
+**Analogy:** `IN` is like checking if a person's name is on an invitation list. It is often more readable and sometimes more performant than a series of `OR` conditions.
+
+**Variation A – Explicit list**
 
 ```sql
 SELECT FirstName, DepartmentID
 FROM Employees
-WHERE DepartmentID IN (10, 40);
+WHERE DepartmentID IN (10, 40); -- Shorthand for: WHERE DepartmentID = 10 OR DepartmentID = 40
 ```
 
-_Result:_ Employees working in Engineering or Research (101, 102, 104, 106).
+***Result:*** All employees working in either Engineering (10) or Research (40): **Amina, Bruno, Deepak, and Faisal**.
 
-**Variation B – subquery-powered list**
+**Variation B – Subquery-powered list**
 
 ```sql
 SELECT FirstName, DepartmentID
@@ -107,15 +183,20 @@ FROM Employees
 WHERE DepartmentID IN (
     SELECT DepartmentID
     FROM Departments
-    WHERE Budget > 300000
+    WHERE Budget >= 300000
 );
 ```
 
-_When underlying budgets change, the same query adapts. Currently Engineering (750000) and Research (300000) qualify, returning employees in departments 10 and 40. If Research budget drops below 300000, Deepak disappears from the result._
+***Result:*** This dynamically finds all employees in high-budget departments. If the Research budget were to drop to 290k, **Deepak would automatically disappear** from this query's result without any change to the query itself, making it resilient to data changes.
 
-#### **`LIKE` (pattern matching)**
+#### **`LIKE` (Pattern Matching)**
 
-**Variation A – prefix match**
+`LIKE` is your go-to for string pattern matching. The wildcards are your tools:
+
+  * `%` (Percent sign): Represents zero, one, or multiple characters.
+  * `_` (Underscore): Represents exactly one character.
+
+**Variation A – Prefix match**
 
 ```sql
 SELECT LastName
@@ -123,21 +204,29 @@ FROM Employees
 WHERE LastName LIKE 'M%';
 ```
 
-_Result:_ Mbaye and Martins. Switching to `'Ma%'` narrows to Martins.
+***Result:*** **Mbaye** and **Martins**. Switching the pattern to `'Ma%'` would narrow the result to just Martins.
 
-**Variation B – contains and single-character wildcard**
+**Variation B – Contains and single-character wildcard**
 
 ```sql
 SELECT FirstName
 FROM Employees
-WHERE FirstName LIKE '_r%';
+WHERE FirstName LIKE '_r%'; -- Second letter is 'r'
 ```
 
-_Result:_ Bruno and Grace (second letter `r`). Replacing `_r%` with `%na%` catches Amina and Irina.
+***Result:*** **Bruno** and **Grace**. This is useful for finding patterns where the position matters. Replacing `'_r%'` with `'%na'` would find names ending in "na", like **Amina**.
 
-#### **`IS NULL` / `IS NOT NULL`**
+:::info Dialect-Specific Pattern Matching
 
-**Variation A – find unassigned departments**
+  * **Case-Insensitivity:** PostgreSQL uses `ILIKE` for case-insensitive matching (`'a%' ILIKE 'A%'` is true). SQL Server's behavior depends on the database's "collation," but you can often force it with `UPPER(LastName) LIKE 'M%'`.
+  * **Character Sets:** Some dialects let you specify ranges, like `WHERE FirstName LIKE '[A-C]%'` to find names starting with A, B, or C (T-SQL/SQL Server syntax).
+    :::
+
+#### **`IS NULL` / `IS NOT NULL` (Handling Missing Data)**
+
+`NULL` isn't a value like `0` or an empty string; it's a *state* representing the absence of a value. It's a black hole. You can't compare it with standard operators (`=`, `<>`). You must use the special operators `IS NULL` or `IS NOT NULL`.
+
+**Variation A – Find unassigned employees**
 
 ```sql
 SELECT EmployeeID, FirstName
@@ -145,9 +234,9 @@ FROM Employees
 WHERE DepartmentID IS NULL;
 ```
 
-_Result:_ Irina is the only central contractor right now. After assigning her to department 20, she disappears from this query and starts showing up in department reports.
+***Result:*** **Irina** is the only central contractor. `WHERE DepartmentID = NULL` would return **zero rows**, because nothing equals `NULL`.
 
-**Variation B – ensure complete management chain**
+**Variation B – Ensure complete management chain**
 
 ```sql
 SELECT EmployeeID, FirstName
@@ -155,17 +244,43 @@ FROM Employees
 WHERE ManagerID IS NOT NULL;
 ```
 
-_Result:_ Everyone except Amina, Grace, and Hugo. If you set `ManagerID` for Amina to 107, she would now appear here and would no longer be a top-level manager.
+***Result:*** Everyone except the top-level managers (**Amina, Grace, and Hugo**). This is useful for building reports that exclude the highest level of the hierarchy.
 
----
+-----
+
+### **🧠 Intermediate Interview Questions (Filtering & Operators)**
+
+:::note Question 1
+**Why does `col = NULL` not work as expected?**  
+**Answer:** In SQL, `NULL` represents an unknown or missing value, not a specific value itself. Therefore, you cannot compare it using standard equality or inequality operators. The result of `any_value = NULL` is not `TRUE` or `FALSE`; it is `UNKNOWN`. The SQL standard provides the special predicates `IS NULL` and `IS NOT NULL` to specifically test for the state of nullness.
+:::
+
+:::note Question 2
+**What is the difference between `!=` and `<>`?**  
+**Answer:** In most SQL dialects, there is **no functional difference** between `!=` and `<>`. Both operators mean "not equal to." The `<>` operator is defined in the ANSI SQL standard, making it slightly more portable, but `!=` is supported by almost every major database system and is often preferred by developers coming from other programming languages. It's a matter of style, but consistency within a project is key.
+:::
+
+-----
 
 ### **5.2. SQL Functions**
 
-Functions can summarize many rows or transform single values. Try different arguments to see how results shift.
+Functions perform calculations and transformations on your data. **Aggregate functions** operate on a group of rows to produce a single summary value, while **scalar functions** operate on a single value and return a single value on the same row.
 
-#### **Aggregate functions**
+:::tip Quick Briefing
+Reach for aggregate functions when you collapse rows into summaries, and scalar functions when you need per-row transformation. Pair them thoughtfully—aggregates in the `SELECT` with `GROUP BY`, scalars alongside raw columns.
+:::
 
-**Variation A – classic stats**
+| Function Family | Operates On          | Example Use Case                         |
+| :-------------- | :------------------- | :--------------------------------------- |
+| Aggregate       | Sets of rows         | Headcounts, totals, min/max calculations |
+| Scalar          | Single row/column    | Formatting names, trimming strings       |
+| Conditional     | Adds branching logic | Counting categories with `CASE`          |
+
+#### **Aggregate Functions**
+
+**Analogy:** Think of these as a funnel. You pour in many rows, and they produce a single, summary result.
+
+**Variation A – Classic company-wide statistics**
 
 ```sql
 SELECT
@@ -177,9 +292,9 @@ SELECT
 FROM Employees;
 ```
 
-_Result:_ One row summarizing salary distribution. If you exclude contractors (`WHERE DepartmentID IS NOT NULL`) the average rises because Irina drops out.
+***Result:*** A single row summarizing salary distribution across all 9 employees. If you exclude contractors by adding `WHERE DepartmentID IS NOT NULL`, the `Headcount` becomes 8, and the `AvgSalary` rises.
 
-**Variation B – conditional aggregate**
+**Variation B – Conditional aggregation with `CASE`**
 
 ```sql
 SELECT
@@ -188,9 +303,9 @@ SELECT
 FROM Employees;
 ```
 
-_Table impact:_ Underlying data remains unchanged; the counts shift instantly if you update any salary.
+***Result:*** A single summary row showing that there are 3 `HighEarners` and 3 `EntryLevel` employees. This is far more efficient than running two separate queries.
 
-**Variation C – distinct counting**
+**Variation C – Counting unique values with `DISTINCT`**
 
 ```sql
 SELECT COUNT(DISTINCT DepartmentID) AS ActiveDepartments
@@ -198,11 +313,13 @@ FROM Employees
 WHERE DepartmentID IS NOT NULL;
 ```
 
-_Result:_ 3 departments currently have staff assigned. If Irina joins Marketing, the distinct count stays 3; if Research hires someone new, it remains 3 because department 40 already exists in the set.
+***Result:*** `4`. The employees are assigned to departments 10, 20, 30, and 40. Even though three employees are in department 10, `DISTINCT` ensures it's only counted once.
 
-#### **Scalar functions**
+#### **Scalar Functions**
 
-**String transformation**
+**Analogy:** Scalar functions are like applying a formula to a single cell in a spreadsheet; they transform one value into another on the same row.
+
+**String Transformation**
 
 ```sql
 SELECT EmployeeID,
@@ -211,9 +328,16 @@ SELECT EmployeeID,
 FROM Employees;
 ```
 
-_Result:_ Same row count as `Employees`. Change `UPPER` to `LOWER` to see lowercase outputs. Changing concatenation to `CONCAT_WS(' ', FirstName, LastName)` works in engines that prefer function syntax.
+***Result:*** The same number of rows as `Employees`, but with transformed string data (e.g., `AMINA LEE`, `3`).
 
-**Numeric rounding and absolute difference**
+:::info Dialect-Specific Syntax: Concatenation
+
+  * **PostgreSQL/Oracle/SQLite:** `FirstName || ' ' || LastName`
+  * **SQL Server:** `FirstName + ' ' + LastName` or `CONCAT(FirstName, ' ', LastName)`
+  * **MySQL:** `CONCAT(FirstName, ' ', LastName)`
+    :::
+
+**Numeric Transformation**
 
 ```sql
 SELECT ProjectID,
@@ -223,9 +347,9 @@ SELECT ProjectID,
 FROM Employee_Projects;
 ```
 
-_Result:_ Helps spot over-allocated contributors. Editing allocation numbers immediately changes the calculations because scalar functions run per row.
+***Result:*** A new column is calculated for each row, showing the allocation as a decimal and its distance from a 50% benchmark.
 
-**Date extraction**
+**Date Extraction**
 
 ```sql
 SELECT EmployeeID,
@@ -235,42 +359,75 @@ SELECT EmployeeID,
 FROM Employees;
 ```
 
-_Result:_ Lets you bucket hires by calendar year/quarter. Swap `EXTRACT` for `DATEPART` if you are on SQL Server.
+***Result:*** Each row now includes the year and quarter of hire, useful for bucketing data over time. In SQL Server, you might use `YEAR(HireDate)` and `DATEPART(quarter, HireDate)`.
 
----
+-----
+
+### **🧠 Intermediate Interview Questions (Functions)**
+
+:::note Question 1
+**What is the difference between `COUNT(*)` and `COUNT(column_name)`?**
+
+- `COUNT(*)` counts **all rows** within a group, period. It doesn't care about the values in the rows.
+- `COUNT(column_name)` counts only the rows where `column_name` is **not `NULL`**.  
+    **Analogy:** `COUNT(*)` is like counting every student in a classroom. `COUNT(HomeworkSubmissionDate)` is like counting only the students who turned in their homework. You'd use the latter to see a completion rate.
+:::
+
+:::note Question 2
+**What does the `COALESCE` function do, and when is it useful?**  
+**Answer:** `COALESCE` returns the first non-`NULL` value from a list of arguments. It's incredibly useful for providing default values for columns that might contain nulls. For example, `SELECT COALESCE(EndDate, 'Ongoing') AS ProjectStatus FROM Projects;` would show the actual end date if it exists, or the string 'Ongoing' if the `EndDate` is `NULL`.
+:::
+
+-----
 
 ### **5.3. Grouping and Aggregation**
 
-#### **`GROUP BY` variations**
+The `GROUP BY` clause collapses multiple rows into a single summary row. It's the foundation of most reporting and analytics. The `HAVING` clause then filters these newly created summary rows.
 
-**Variation A – department headcount**
+:::tip Quick Briefing
+`GROUP BY` defines the grain of your result set, aggregates describe each group, and `HAVING` trims groups after they are formed. Keep raw filters in `WHERE` to avoid wasting compute on rows you already know you don't need.
+:::
+
+| Piece      | Why It Matters                | Pro Tip                                |
+| :--------- | :---------------------------- | :------------------------------------- |
+| `GROUP BY` | Sets the grouping key         | Every non-aggregate column must appear |
+| Aggregates | Summarize values per group    | Alias them for readable downstream use |
+| `HAVING`   | Filters the aggregated result | Use for aggregate-based thresholds     |
+
+**Analogy:** `GROUP BY` is like sorting laundry into piles by color (white, dark, colored). The aggregate function (`COUNT(*)`) tells you how many items are in each pile. `HAVING` is like deciding to only wash the piles that have more than 5 items in them.
+
+#### **`GROUP BY` Variations**
+
+**Variation A – Department headcount**
 
 ```sql
-SELECT DepartmentID,
-       COUNT(*) AS EmployeeCount
+SELECT
+    DepartmentID,
+    COUNT(*) AS EmployeeCount
 FROM Employees
 WHERE DepartmentID IS NOT NULL
 GROUP BY DepartmentID
 ORDER BY DepartmentID;
 ```
 
-_Result:_ Departments 10, 20, 30, 40 map to counts 3, 2, 2, 1. If Deepak transfers from 40 to 10, department 40 drops to zero (and disappears unless you outer join to `Departments`).
+***Result:*** A summary table showing how many employees are in each department. Department 10 has 3, 20 has 2, 30 has 2, and 40 has 1.
 
-**Variation B – group by multiple columns**
+**Variation B – Group by multiple columns**
 
 ```sql
-SELECT DepartmentID,
-       EXTRACT(YEAR FROM HireDate) AS HireYear,
-       COUNT(*) AS Hires
+SELECT
+    DepartmentID,
+    EXTRACT(YEAR FROM HireDate) AS HireYear,
+    COUNT(*) AS HiresInYear
 FROM Employees
 WHERE DepartmentID IS NOT NULL
 GROUP BY DepartmentID, EXTRACT(YEAR FROM HireDate)
 ORDER BY DepartmentID, HireYear;
 ```
 
-_Result:_ Breaks counts by department and hire year. Adding 2023 hires immediately produces a new row combination.
+***Result:*** A more granular breakdown, showing hires per department, per year. Department 10 would have rows for 2015 (1 hire), 2018 (1 hire), and 2021 (1 hire).
 
-**Variation C – grouping sets and rollup**
+**Variation C – Grouping with `ROLLUP`**
 
 ```sql
 SELECT
@@ -282,122 +439,219 @@ GROUP BY ROLLUP (DepartmentID, ManagerID)
 ORDER BY DepartmentID, ManagerID;
 ```
 
-_Result:_ You get detailed counts per manager, totals per department, and a grand total (`NULL, NULL`). If your engine lacks `ROLLUP`, simulate it with `GROUPING SETS` or `UNION ALL` queries.
+***Result:*** This query provides multiple levels of aggregation at once:
 
-#### **`HAVING` variations**
+1.  Counts per manager within each department (`DepartmentID`, `ManagerID`).
+2.  Subtotals for each department (`DepartmentID`, `NULL`).
+3.  A grand total for the whole table (`NULL`, `NULL`).
+    This is a powerful tool for creating reports with subtotals without using `UNION ALL`.
 
-**Variation A – enforce minimum headcount**
+#### **`HAVING` Variations**
+
+**Best Practice:** Remember the logical order of operations: `WHERE` filters rows *before* grouping, `HAVING` filters groups *after* aggregation.
+
+**Variation A – Enforce minimum headcount**
 
 ```sql
-SELECT DepartmentID,
-       COUNT(*) AS EmployeeCount
+SELECT
+    DepartmentID,
+    COUNT(*) AS EmployeeCount
 FROM Employees
 WHERE DepartmentID IS NOT NULL
 GROUP BY DepartmentID
 HAVING COUNT(*) >= 2;
 ```
 
-_Result:_ Filters out department 40 because it has only one employee. Lowering the threshold to 1 brings it back.
+***Result:*** This filters the result from the `GROUP BY` example, removing Department 40 (Research) because its `EmployeeCount` of 1 does not meet the `HAVING` criteria.
 
-**Variation B – aggregate predicate referencing other aggregates**
+**Variation B – Filter on multiple aggregate conditions**
 
 ```sql
-SELECT DepartmentID,
-       AVG(Salary) AS AvgSalary,
-       SUM(Salary) AS TotalSalary
+SELECT
+    DepartmentID,
+    AVG(Salary) AS AvgSalary,
+    SUM(Salary) AS TotalSalary
 FROM Employees
 WHERE DepartmentID IS NOT NULL
 GROUP BY DepartmentID
 HAVING SUM(Salary) > 150000 AND AVG(Salary) < 95000;
 ```
 
-_Result:_ Returns departments whose payroll exceeds 150k but average salary is below 95k, highlighting larger teams with moderate salaries. Changing either threshold changes membership instantly.
+***Result:*** This finds large, moderately-paid departments. Engineering, Marketing, and Customer Success all meet the criteria.
 
----
+-----
+
+### **🧠 Intermediate Interview Questions (Grouping & Aggregation)**
+
+:::note Question 1
+**Explain the difference between `WHERE` and `HAVING`.**  
+**Answer:** `WHERE` filters individual rows **before** they are aggregated by the `GROUP BY` clause. `HAVING` filters entire groups of rows **after** they have been aggregated. You use `WHERE` for conditions on raw table columns, and `HAVING` for conditions on aggregate functions like `COUNT()` or `SUM()`.
+:::
+
+:::note Question 2
+**What happens if you include a column in your `SELECT` list that isn't in your `GROUP BY` clause and isn't an aggregate function?**  
+**Answer:** Most modern SQL databases will throw an error. The reason is logical ambiguity. If you `GROUP BY DepartmentID` and `SELECT FirstName`, the database doesn't know *which* `FirstName` to show for the "Engineering" group, which has three people. To be valid, every non-aggregated column in the `SELECT` list must also be in the `GROUP BY` clause.
+:::
+
+-----
 
 ### **5.4. Joins**
 
-The same pair of tables can yield radically different shapes depending on join type.
+The `JOIN` clause is the heart of a relational database, letting you weave together data from multiple tables.
 
-**Baseline slices before joining**
+:::tip Quick Briefing
+A join lines up rows from multiple tables based on a matching rule (the join key). Choosing the join type controls which unmatched rows you keep or discard. Inner joins keep only matches; outer joins keep the leftovers from one or both sides; self-joins compare a table to itself; many-to-many joins travel through a bridging table.
+:::
 
-| DeptID | DeptName         |
-| :----- | :--------------- |
-| 10     | Engineering      |
-| 20     | Marketing        |
-| 30     | Customer Success |
-| 40     | Research         |
+| Join Type           | What It Keeps                                               | Typical Use Case                                |
+| :------------------ | :---------------------------------------------------------- | :---------------------------------------------- |
+| `INNER JOIN`        | Only rows that match on both sides                          | Core reporting when both sides must exist       |
+| `LEFT JOIN`         | Every row from the left table plus matches from the right   | Spotting missing related data on the right side |
+| `RIGHT JOIN`        | Every row from the right table plus matches from the left   | Less common; symmetric to `LEFT JOIN`           |
+| `FULL OUTER JOIN`   | All rows from both tables, matched where possible           | Auditing mismatches on either side              |
+| Self-join           | Rows from one table matched to other rows in the same table | Hierarchies, before/after comparisons           |
+| Bridging-table join | Rows connected through an associative (many-to-many) table  | Project assignments, tagging systems            |
 
-| EmpID | DeptID |
-| :---- | :----- |
-| 101   | 10     |
-| 102   | 10     |
-| 103   | 20     |
-| 104   | 40     |
-| 105   | 30     |
-| 106   | 10     |
-| 107   | 20     |
-| 108   | 30     |
-| 109   | NULL   |
+
 
 #### **`INNER JOIN` vs `LEFT JOIN`**
 
 ```sql
+-- INNER JOIN: Only returns rows with matches in both tables.
 SELECT e.EmployeeID, e.FirstName, d.DepartmentName
 FROM Employees AS e
-JOIN Departments AS d ON e.DepartmentID = d.DepartmentID
-ORDER BY e.EmployeeID;
+JOIN Departments AS d ON e.DepartmentID = d.DepartmentID;
 ```
 
-_Result:_ Contractors with `NULL` departments (Irina) vanish. Switching to `LEFT JOIN` preserves Irina with `DepartmentName = NULL`.
+***Result:*** 8 rows. **Irina is excluded** because her `DepartmentID` is `NULL` and has no match in `Departments`.
+
+| EmployeeID | FirstName | DepartmentName   |
+| :--------- | :-------- | :--------------- |
+| 101        | Amina     | Engineering      |
+| 102        | Bruno     | Engineering      |
+| 103        | Carmen    | Marketing        |
+| 104        | Deepak    | Research         |
+| 105        | Erin      | Customer Success |
+| 106        | Faisal    | Engineering      |
+| 107        | Grace     | Marketing        |
+| 108        | Hugo      | Customer Success |
+
+```sql
+-- LEFT JOIN: Returns all rows from the left table (Employees), and matches from the right.
+SELECT e.EmployeeID, e.FirstName, d.DepartmentName
+FROM Employees AS e
+LEFT JOIN Departments AS d ON e.DepartmentID = d.DepartmentID;
+```
+
+***Result:*** 9 rows. **Irina is included**, but her `DepartmentName` is `NULL`.
+
+| EmployeeID | FirstName | DepartmentName   |
+| :--------- | :-------- | :--------------- |
+| 101        | Amina     | Engineering      |
+| 102        | Bruno     | Engineering      |
+| 103        | Carmen    | Marketing        |
+| 104        | Deepak    | Research         |
+| 105        | Erin      | Customer Success |
+| 106        | Faisal    | Engineering      |
+| 107        | Grace     | Marketing        |
+| 108        | Hugo      | Customer Success |
+| 109        | Irina     | NULL             |
 
 #### **`RIGHT JOIN` and `FULL OUTER JOIN`**
 
 ```sql
-SELECT d.DepartmentName,
-       e.EmployeeID
+SELECT d.DepartmentName, e.FirstName
 FROM Employees AS e
-RIGHT JOIN Departments AS d ON e.DepartmentID = d.DepartmentID
-ORDER BY d.DepartmentName, e.EmployeeID;
+RIGHT JOIN Departments AS d ON e.DepartmentID = d.DepartmentID;
 ```
 
-_Result:_ Every department listed even if empty. If Research lost Deepak, you would still see "Research" with `EmployeeID = NULL`. Using `FULL OUTER JOIN` additionally keeps contractors without departments.
+***Result:*** All 4 departments are listed. If we added a "Sales" department with no employees, it would appear in this list with a `NULL` `FirstName`. This is useful for finding entities that are missing related data. A `FULL OUTER JOIN` would include both the empty "Sales" department and the unassigned employee, Irina.
 
-#### **Self join for hierarchy**
+| DepartmentName   | FirstName |
+| :--------------- | :-------- |
+| Engineering      | Amina     |
+| Engineering      | Bruno     |
+| Engineering      | Faisal    |
+| Marketing        | Carmen    |
+| Marketing        | Grace     |
+| Customer Success | Erin      |
+| Customer Success | Hugo      |
+| Research         | Deepak    |
+
+:::note Outer Join Insight
+With the current data, a `FULL OUTER JOIN` (`SELECT ... FROM Employees FULL OUTER JOIN Departments ON ...`) returns the same rows as the `LEFT JOIN`; only Irina appears without a department. If a department had no employees, it would show up here with `NULL` for the employee columns.
+:::
+
+#### **Self-Join for Hierarchy**
 
 ```sql
-SELECT child.EmployeeID,
-       child.FirstName AS Employee,
-       parent.FirstName AS Manager
-FROM Employees AS child
-LEFT JOIN Employees AS parent ON child.ManagerID = parent.EmployeeID
-ORDER BY child.EmployeeID;
+SELECT
+    employee.FirstName AS EmployeeName,
+    manager.FirstName  AS ManagerName
+FROM Employees AS employee
+LEFT JOIN Employees AS manager ON employee.ManagerID = manager.EmployeeID;
 ```
 
-_Result:_ Each row shows employee/manager pairing. When `ManagerID` is `NULL`, manager fields are `NULL`, signaling top-level roles. Changing Bruno's manager to 108 updates his row instantly.
+***Result:*** 9 rows. Each employee is listed next to their manager's name. The `LEFT JOIN` is crucial to include top-level managers, who appear with a `NULL` `ManagerName`.
 
-#### **Join with bridging table**
+| EmployeeName | ManagerName |
+| :----------- | :---------- |
+| Amina        | NULL        |
+| Bruno        | Amina       |
+| Carmen       | Grace       |
+| Deepak       | Amina       |
+| Erin         | Hugo        |
+| Faisal       | Bruno       |
+| Grace        | NULL        |
+| Hugo         | NULL        |
+| Irina        | Amina       |
+
+#### **Join with a Bridging Table (Many-to-Many)**
 
 ```sql
-SELECT e.FirstName,
-       p.ProjectName,
-       ep.Role,
-       ep.AllocationPercent
+SELECT
+    e.FirstName,
+    p.ProjectName,
+    ep.Role
 FROM Employee_Projects AS ep
 JOIN Employees AS e ON ep.EmployeeID = e.EmployeeID
-JOIN Projects  AS p ON ep.ProjectID = p.ProjectID
-ORDER BY p.ProjectName, e.FirstName;
+JOIN Projects  AS p ON ep.ProjectID = p.ProjectID;
 ```
 
-_Result:_ Expands many-to-many relationships into readable rows. Removing a row from `Employee_Projects` will prune lines for that employee/project combination only.
+***Result:*** This query "unpacks" the many-to-many relationship, showing every single employee assignment to every project in a clean, readable list.
 
----
+| FirstName | ProjectName      | Role         |
+| :-------- | :--------------- | :----------- |
+| Amina     | Phoenix Rewrite  | Sponsor      |
+| Bruno     | Phoenix Rewrite  | Lead Eng     |
+| Bruno     | Lighthouse AI    | Reviewer     |
+| Deepak    | Lighthouse AI    | Scientist    |
+| Erin      | Harmony Outreach | PM           |
+| Faisal    | Phoenix Rewrite  | Dev          |
+| Grace     | Atlas Launch     | Advisor      |
+| Hugo      | Harmony Outreach | Exec Sponsor |
+| Irina     | Atlas Launch     | Contractor   |
+
+-----
 
 ### **5.5. Subqueries (Nested Queries)**
 
+**Analogy:** A **subquery** is like a parenthetical phrase in a sentence—it's evaluated in place to provide a specific piece of information.
+
+:::tip Quick Briefing
+Subqueries make SQL composable. Inline them in `WHERE` for dynamic filters, place them in `FROM` as derived tables, or correlate them for row-by-row comparisons. Use `EXISTS` when you only care that a match exists, not what it is.
+:::
+
+| Placement       | What It Returns             | Use It When                                 |
+| :-------------- | :-------------------------- | :------------------------------------------ |
+| `WHERE`         | Single value or list        | Filtering by lookup result                  |
+| `FROM`          | Temporary table (derived)   | Reusing intermediate aggregates             |
+| Correlated      | One value per outer row     | Comparisons against a row's peer group      |
+| `EXISTS` / `IN` | Boolean / membership checks | Existence tests vs. returning actual values |
+
 #### **Subquery in `WHERE`**
 
-**Variation A – single-value comparison**
+**Variation A – Single-value comparison**
 
 ```sql
 SELECT FirstName, DepartmentID
@@ -409,7 +663,7 @@ WHERE DepartmentID = (
 );
 ```
 
-_Result:_ Employees 101, 102, 106 (department 10). If two departments shared the same name, this subquery would fail; add `LIMIT 1` or a unique constraint to safeguard.
+***Result:*** Returns all employees in the Engineering department. This fails if the subquery returns more than one row.
 
 **Variation B – `IN` subquery with condition**
 
@@ -423,15 +677,17 @@ WHERE DepartmentID IN (
 );
 ```
 
-_Result:_ Finds employees in departments overseen by Engineering (currently department 40, so Deepak). Assigning more sub-departments to parent 10 grows the result automatically.
+***Result:*** Deepak, who works in Research (40), a sub-department of Engineering.
 
-#### **`FROM` clause subquery**
+#### **`FROM` clause subquery (Derived Table)**
 
 ```sql
-SELECT avg_stats.DepartmentID,
-       avg_stats.AvgSalary,
-       avg_stats.Headcount
+SELECT
+    avg_stats.DepartmentID,
+    avg_stats.AvgSalary,
+    avg_stats.Headcount
 FROM (
+    -- This subquery creates a temporary, in-memory table called "avg_stats"
     SELECT DepartmentID,
            AVG(Salary) AS AvgSalary,
            COUNT(*)    AS Headcount
@@ -442,44 +698,58 @@ FROM (
 WHERE avg_stats.Headcount >= 2;
 ```
 
-_Result:_ Derived table holds per-department summaries, outer query filters the aggregated rows. Removing the outer filter surfaces departments with a single employee.
+***Result:*** The inner query first calculates stats for all departments. The outer query then filters these aggregated results. (CTEs are a more readable way to do this).
 
-#### **Correlated subquery**
+#### **Correlated Subquery**
+
+A correlated subquery runs once for each row of the outer query, making it potentially slow but powerful for row-by-row comparisons.
 
 ```sql
-SELECT e.EmployeeID,
-       e.FirstName,
-       e.Salary
+SELECT e.EmployeeID, e.FirstName, e.Salary
 FROM Employees AS e
 WHERE e.Salary > (
     SELECT AVG(e_inner.Salary)
     FROM Employees AS e_inner
-    WHERE e_inner.DepartmentID = e.DepartmentID
+    WHERE e_inner.DepartmentID = e.DepartmentID -- Links inner query to outer row
 );
 ```
 
-_Result:_ Returns employees earning above their department average. If the department has only one member, the average equals their salary, so they do not appear unless you use `>=`.
+***Result:*** Returns employees earning above their department average (Amina, Grace, Hugo).
 
 #### **`EXISTS` vs `IN`**
+
+**Best Practice:** Use `EXISTS` when you only need to confirm that a match exists and don't care about the values from the subquery. It's often more performant because it can stop searching as soon as it finds the first match (a "short-circuit").
 
 ```sql
 SELECT e.EmployeeID, e.FirstName
 FROM Employees AS e
 WHERE EXISTS (
-    SELECT 1
+    SELECT 1 -- The '1' is arbitrary; it could be any literal. We just care if a row is returned.
     FROM Employee_Projects AS ep
     WHERE ep.EmployeeID = e.EmployeeID
       AND ep.AllocationPercent >= 50
 );
 ```
 
-_Result:_ Employees with at least one heavy project assignment (102, 104, 105). Replacing `EXISTS` with `IN` against the same subquery would deliver the same list today, but `EXISTS` ignores duplicates and can short-circuit faster.
+***Result:*** Employees with at least one high-allocation project assignment (Bruno, Deepak, Erin).
 
----
+-----
 
 ### **5.6. Common Table Expressions (CTEs)**
 
-#### **Single CTE for clarity**
+**Analogy:** A **CTE** is like defining a key term in a glossary at the beginning of a chapter and then referencing that term throughout. It promotes clarity and reuse.
+
+:::tip Quick Briefing
+CTEs turn tangled SQL into named steps. They shine when you have multiple logical stages, need recursion, or want to reference a result more than once. Think "declare, then reuse."
+:::
+
+| CTE Flavor  | What It Solves                                | When To Reach For It                  |
+| :---------- | :-------------------------------------------- | :------------------------------------ |
+| Single-step | Clarifies a complex subquery                  | Replace nested derived tables         |
+| Stacked     | Breaks down multi-stage transformations       | Multi-phase reporting pipelines       |
+| Recursive   | Traverses hierarchies or path-dependent logic | Org charts, bill-of-materials, graphs |
+
+#### **Single CTE for Clarity**
 
 ```sql
 WITH DeptStats AS (
@@ -498,9 +768,9 @@ JOIN Departments AS d ON d.DepartmentID = s.DepartmentID
 WHERE s.Headcount >= 2;
 ```
 
-_Result:_ Same logic as earlier subquery, but sectioned into named steps. Removing the `WHERE` clause yields all departments, showing how CTEs act like reusable views for a single statement.
+***Result:*** Same logic as the derived table example, but sectioned into a named, logical step (`DeptStats`), making it far easier to read and debug.
 
-#### **Stacked CTEs for stepwise reasoning**
+#### **Stacked CTEs for Stepwise Reasoning**
 
 ```sql
 WITH ProjectHours AS (
@@ -509,56 +779,86 @@ WITH ProjectHours AS (
     FROM Employee_Projects
     GROUP BY ProjectID
 ),
-    OverAllocated AS (
-    SELECT ProjectID
+OverAllocated AS (
+    SELECT ProjectID, TotalPercent
     FROM ProjectHours
     WHERE TotalPercent > 100
 )
-SELECT p.ProjectName,
-       h.TotalPercent
-FROM ProjectHours AS h
-JOIN Projects AS p ON p.ProjectID = h.ProjectID
-LEFT JOIN OverAllocated AS o ON o.ProjectID = h.ProjectID
-ORDER BY h.TotalPercent DESC;
+SELECT
+    p.ProjectName,
+    oa.TotalPercent
+FROM Projects p
+JOIN OverAllocated oa ON p.ProjectID = oa.ProjectID;
 ```
 
-_Result:_ Shows per-project allocation and flags those exceeding 100%. If no project crosses the threshold, `OverAllocated` is empty but the main list still renders because of the `LEFT JOIN`.
+***Result:*** A clean list of only the projects that are over-allocated. In our data, this is just the "Phoenix Rewrite" at 130%. The logic is broken into two clear steps: first calculate all totals, then filter for the over-allocated ones.
 
-#### **Recursive CTE (hierarchy)**
+#### **Recursive CTE for Hierarchies**
 
 ```sql
 WITH RECURSIVE OrgChart AS (
-    SELECT EmployeeID,
-           FirstName,
-           ManagerID,
-           0 AS Depth
+    -- Anchor member: find the top-level managers
+    SELECT EmployeeID, FirstName, ManagerID, 0 AS Depth
     FROM Employees
     WHERE ManagerID IS NULL
+
     UNION ALL
-    SELECT e.EmployeeID,
-           e.FirstName,
-           e.ManagerID,
-           oc.Depth + 1
+
+    -- Recursive member: find employees who report to the previous level
+    SELECT e.EmployeeID, e.FirstName, e.ManagerID, oc.Depth + 1
     FROM Employees AS e
     JOIN OrgChart AS oc ON e.ManagerID = oc.EmployeeID
 )
-SELECT *
-FROM OrgChart
-ORDER BY Depth, EmployeeID;
+SELECT * FROM OrgChart ORDER BY Depth, EmployeeID;
 ```
 
-_Result:_ Traverses management hierarchy from roots downward. Adding a new reporting layer automatically extends the tree in the result.
+***Result:*** A full organizational chart showing each employee's reporting level (depth). Amina, Grace, and Hugo are at Depth 0. Their direct reports are at Depth 1, and so on.
 
----
+:::info Dialect-Specific Syntax
+The `RECURSIVE` keyword is required in PostgreSQL but omitted in SQL Server (which just uses `WITH ... AS`).
+:::
+
+-----
+
+### **🧠 Advanced Interview Questions (Joins, Subqueries, CTEs)**
+
+:::note Question 1
+**In a `LEFT JOIN`, what is the difference between putting a filter condition in the `ON` clause versus the `WHERE` clause?**
+
+- **Condition in `ON` clause:** The filter is applied **before** the join happens. It filters the *right table* first, and then the join proceeds. All rows from the left table are still returned.
+- **Condition in `WHERE` clause:** The filter is applied **after** the join is complete. This effectively turns the `LEFT JOIN` into an `INNER JOIN`, because it will filter out any rows where the right-side columns are `NULL` (which is what a `LEFT JOIN` produces for non-matches).
+:::
+
+:::note Question 2
+**What is the difference between a subquery and a CTE? When would you use one over the other?**  
+**Answer:** A CTE is a named temporary result set. They offer three huge advantages over subqueries:
+1. **Readability:** They break complex logic into digestible, named steps.
+2. **Reusability:** A CTE can be referenced multiple times within the subsequent query.
+3. **Recursion:** CTEs can be recursive, which is necessary for traversing hierarchies.  
+**Rule of Thumb:** Use a subquery for a trivial, single-use lookup. For anything else, **use a CTE**.
+:::
+
+-----
 
 ### **5.7. Window Functions**
 
-#### **Ranking family**
+**Analogy:** A `GROUP BY` is like sending employees into separate meeting rooms (departments) and getting back one summary sheet per room. A **window function** is like letting every employee stay at their desk but giving them a walkie-talkie to ask their department colleagues a question (like "What's our department's average salary?"). Every employee gets an answer, and no rows are collapsed.
+
+:::tip Quick Briefing
+Window functions add context without losing row detail. Partition to define peer groups, order to control running calculations, and pick functions (`ROW_NUMBER`, `AVG`, `LAG`) based on the insight you need.
+:::
+
+| Component        | Role                                           | Example Insight                     |
+| :--------------- | :--------------------------------------------- | :---------------------------------- |
+| `PARTITION BY`   | Defines the peer group                         | Restart ranking by department       |
+| `ORDER BY`       | Sets sequence within each partition            | Running totals or lag comparisons   |
+| Window frame     | Limits the rows considered for the calculation | Moving averages (e.g., last 2 rows) |
+| Window functions | Perform per-row analytics                      | Rank, lead/lag, percent of total    |
+
+#### **Ranking Family (`RANK`, `DENSE_RANK`, `ROW_NUMBER`)**
 
 ```sql
-SELECT EmployeeID,
-       DepartmentID,
-       Salary,
+SELECT EmployeeID, DepartmentID, Salary,
        ROW_NUMBER() OVER (PARTITION BY DepartmentID ORDER BY Salary DESC) AS RowNum,
        RANK()       OVER (PARTITION BY DepartmentID ORDER BY Salary DESC) AS RankWithGaps,
        DENSE_RANK() OVER (PARTITION BY DepartmentID ORDER BY Salary DESC) AS DenseRank
@@ -567,38 +867,61 @@ WHERE DepartmentID IS NOT NULL
 ORDER BY DepartmentID, Salary DESC;
 ```
 
-_Result:_ Compare how ties affect each rank column. If two employees share the same salary, `RANK` skips numbers while `DENSE_RANK` does not.
+***Result:*** If two employees share the same salary, `RANK` skips the next rank number (e.g., 1, 2, 2, 4), while `DENSE_RANK` does not (1, 2, 2, 3). `DENSE_RANK` is usually best for "Top N per category" reports.
 
-#### **Running totals and moving averages**
+#### **Running Totals and Moving Averages**
 
 ```sql
-SELECT ep.EmployeeID,
-       e.FirstName,
-       ep.ProjectID,
-       ep.AllocationPercent,
-       SUM(ep.AllocationPercent) OVER (PARTITION BY ep.EmployeeID ORDER BY ep.ProjectID) AS RunningAlloc,
-       AVG(ep.AllocationPercent) OVER (PARTITION BY ep.EmployeeID ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING) AS TwoProjectAvg
+SELECT ep.EmployeeID, e.FirstName, ep.ProjectID, ep.AllocationPercent,
+       SUM(ep.AllocationPercent) OVER (PARTITION BY ep.EmployeeID ORDER BY ep.ProjectID) AS RunningTotalAllocation,
+       AVG(ep.AllocationPercent) OVER (PARTITION BY ep.EmployeeID ORDER BY ep.ProjectID ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS MovingAvg2Projects
 FROM Employee_Projects AS ep
 JOIN Employees AS e ON e.EmployeeID = ep.EmployeeID
 ORDER BY ep.EmployeeID, ep.ProjectID;
 ```
 
-_Result:_ For each employee, see how allocations accumulate across projects and the forward-looking average. Sorting `ORDER BY ep.ProjectID DESC` changes the running total sequence.
+***Result:*** For each of an employee's project assignments, this calculates their cumulative allocation (`RunningTotalAllocation`) and the average allocation over their last two projects (`MovingAvg2Projects`).
 
-#### **Window over entire set**
+#### **Window Over Entire Set**
 
 ```sql
-SELECT ProjectID,
-       AllocationPercent,
-       AllocationPercent - AVG(AllocationPercent) OVER () AS DeltaFromOverallAvg
+SELECT ProjectID, AllocationPercent,
+       AllocationPercent - AVG(AllocationPercent) OVER () AS DeltaFromCompanyAvg
 FROM Employee_Projects;
 ```
 
-_Result:_ Shows each row's deviation from the global average (approx 37.8%). Partitioning by `ProjectID` would instead compare within each project.
+***Result:*** Shows each project assignment's deviation from the overall company average allocation (approx 37.8%). Leaving the `OVER()` clause empty tells the function to use the entire result set as its window.
 
----
+-----
+
+### **🧠 Advanced Interview Questions (Window Functions)**
+
+:::note Question 1
+**What is the most significant difference between a window function and a `GROUP BY` aggregation?**  
+**Answer:** A **`GROUP BY` clause collapses multiple rows into a single summary row**, reducing the total number of rows. A **window function performs a calculation across a set of rows but preserves the individual rows**. It adds a new column with the calculated value to each row.
+:::
+
+:::note Question 2
+**Describe a business scenario where you would use `LAG()` or `LEAD()`.**  
+**Answer:** You would use `LAG()` to calculate **month-over-month sales growth**. You would partition your data by product, order it by month, and use `LAG(sales_amount, 1)` to get the previous month's sales on the same row. This makes it trivial to calculate the growth percentage: `(current_sales - LAG(sales_amount, 1)) / LAG(sales_amount, 1)`.
+:::
+
+-----
 
 ### **5.8. Set Operations**
+
+**Analogy:** Set operators are the SQL implementation of Venn diagrams, combining the results of two or more queries. For them to work, the `SELECT` statements must have the same number of columns with compatible data types.
+
+:::tip Quick Briefing
+Set operations combine entire result sets at once. `UNION` merges and optionally deduplicates, `INTERSECT` keeps overlaps, and `EXCEPT` highlights differences. Always align column counts and data types before you combine.
+:::
+
+| Operator    | Output Focus                         | Typical Scenario                           |
+| :---------- | :----------------------------------- | :----------------------------------------- |
+| `UNION ALL` | Everything from both inputs          | Append historical snapshots without dedupe |
+| `UNION`     | De-duplicated combined set           | Consolidate unique IDs from two sources    |
+| `INTERSECT` | Rows present in both inputs          | Ensure entities appear in two systems      |
+| `EXCEPT`    | Rows present in first, not in second | Reconcile missing data or orphan records   |
 
 #### **`UNION` vs `UNION ALL`**
 
@@ -608,167 +931,221 @@ UNION
 SELECT ParentDepartmentID FROM Departments WHERE ParentDepartmentID IS NOT NULL;
 ```
 
-_Result:_ Unique list of department IDs that appear either as home departments or parent departments (10, 20, 30, 40). Switching to `UNION ALL` preserves duplicates, useful for counts but requiring an outer aggregation to dedupe.
+***Result:*** A unique list of department IDs: `10, 20, 30, 40`. `UNION` automatically removes the duplicate value of `10`. `UNION ALL` would have kept it.
+
+:::tip Best Practice
+`UNION` must perform a sort-and-deduplicate operation, which can be expensive. If you know your result sets are already unique or you don't care about duplicates, **always use `UNION ALL`**. It's significantly faster.
+:::
 
 #### **`INTERSECT`**
 
 ```sql
+-- Departments that have employees
 SELECT DepartmentID FROM Employees WHERE DepartmentID IS NOT NULL
 INTERSECT
-SELECT DepartmentID FROM Projects;
+-- Departments that own projects
+SELECT OwningDepartmentID FROM Projects;
 ```
 
-_Result:_ Departments that both employ people and own projects (10, 20, 30, 40). If Research closes all projects, department 40 disappears.
+***Result:*** `10, 20, 30, 40`. The departments that appear in both result sets.
 
-#### **`EXCEPT` (anti join shorthand)**
+#### **`EXCEPT` (or `MINUS` in Oracle)**
 
 ```sql
+-- All departments that exist
 SELECT DepartmentID FROM Departments
 EXCEPT
+-- Departments that have employees
 SELECT DepartmentID FROM Employees WHERE DepartmentID IS NOT NULL;
 ```
 
-_Result:_ Departments lacking headcount. Currently none. If you inserted department 50 without employees, it would surface here immediately.
+***Result:*** An empty set. If we added a "Sales" department (ID 50) with no staff, this query would return `50`. This is a powerful tool for data reconciliation.
 
----
+-----
+
+### **🧠 Intermediate Interview Questions (Set Operations)**
+
+:::note Question 1
+**When would you choose `UNION ALL` over `UNION`? What is the performance implication?**  
+**Answer:** You should **always prefer `UNION ALL` unless you specifically need the database to remove duplicate rows**. `UNION` must perform a distinct sort operation on the entire combined result set, which is very slow and memory-intensive. `UNION ALL` simply appends the results, making it much faster.
+:::
+
+:::note Question 2
+**Can you use a `JOIN` to achieve the same result as `INTERSECT`?**  
+**Answer:** Yes. You can simulate `A INTERSECT B` using `SELECT DISTINCT A.* FROM A INNER JOIN B ON A.key = B.key`. However, `INTERSECT` is often more readable and can be more efficient as it compares entire rows, not just join keys.
+:::
+
+-----
 
 ### **5.9. Advanced Objects**
 
+Beyond writing queries, you can create persistent objects in the database to encapsulate logic, improve security, and automate tasks.
+
+:::tip Quick Briefing
+Advanced objects push logic closer to the data. Views simplify and secure reads, stored procedures orchestrate complex writes, triggers enforce automatic reactions, and UDFs package reusable formulas.
+:::
+
+| Object           | Primary Benefit                     | Ideal Use Case                               |
+| :--------------- | :---------------------------------- | :------------------------------------------- |
+| View             | Simplify/secure read access         | Share canonical joins with analysts          |
+| Stored procedure | Encapsulate transactional workflows | Apply business rules atomically              |
+| Trigger          | Auto-run logic on data change       | Audit logs, derived column maintenance       |
+| UDF              | Reusable calculation logic          | Consistent formatting or validation routines |
+
 #### **Views**
 
-**Variation A – simple view for reuse**
+**Analogy:** A **View** is like a desktop shortcut. The shortcut itself contains no data, but it points to the real application and runs it when you click.
+
+**Variation A – Simple view for reuse**
 
 ```sql
 CREATE VIEW vw_employee_directory AS
-SELECT e.EmployeeID,
-       e.FirstName,
-       e.LastName,
-       d.DepartmentName
+SELECT e.EmployeeID, e.FirstName, e.LastName, d.DepartmentName
 FROM Employees AS e
 LEFT JOIN Departments AS d ON e.DepartmentID = d.DepartmentID;
 ```
 
-_Result:_ No data copied; the view reads live tables. Running `SELECT * FROM vw_employee_directory WHERE DepartmentName = 'Engineering';` returns the engineering roster. Dropping or renaming columns in base tables can break the view, so manage carefully.
+***Impact:*** Now, a user can run `SELECT * FROM vw_employee_directory WHERE DepartmentName = 'Engineering';` without needing to know how to write a join.
 
-**Variation B – secure view masking salaries**
+**Variation B – Secure view masking salaries**
 
 ```sql
 CREATE VIEW vw_public_directory AS
-SELECT e.EmployeeID,
-       e.FirstName,
-       e.LastName,
-       COALESCE(d.DepartmentName, 'Contractor') AS DepartmentLabel
+SELECT e.EmployeeID, e.FirstName, e.LastName, COALESCE(d.DepartmentName, 'Contractor') AS DepartmentLabel
 FROM Employees AS e
 LEFT JOIN Departments AS d ON e.DepartmentID = d.DepartmentID;
 
 GRANT SELECT ON vw_public_directory TO analytics_reader;
 ```
 
-_Table impact:_ Users with `analytics_reader` role now see department labels but not salaries. Revoking the grant removes access immediately.
+***Impact:*** Users in the `analytics_reader` role can query this view but are blocked from seeing the underlying `Employees` table with its salary data.
 
-#### **Stored procedures**
+#### **Stored Procedures**
 
-**Variation A – parameterized fetch**
+**Analogy:** A **Stored Procedure** is like a recipe. Instead of listing out "measure flour, add eggs, mix..." every time, you just say "make the pancake recipe."
+
+**Variation A – Parameterized fetch**
 
 ```sql
-CREATE PROCEDURE GetEmployeesByDept(IN p_department INT)
-LANGUAGE sql
-AS $$
+CREATE PROCEDURE GetEmployeesByDept(IN p_department_id INT)
+LANGUAGE sql AS $$
     SELECT EmployeeID, FirstName, LastName
     FROM Employees
-    WHERE DepartmentID = p_department;
+    WHERE DepartmentID = p_department_id;
 $$;
 
-CALL GetEmployeesByDept(10);
+CALL GetEmployeesByDept(10); -- Returns Engineering staff
 ```
 
-_Result:_ Returns Engineering staff. Passing `NULL` retrieves no rows because the equality comparison fails; update the procedure with `IS NOT DISTINCT FROM` for nullable inputs.
-
-**Variation B – procedure with data change and transaction control**
+**Variation B – Data modification with transaction control**
 
 ```sql
-CREATE PROCEDURE GiveRaise(IN p_employee INT, IN p_percent NUMERIC)
-LANGUAGE plpgsql
-AS $$
+CREATE PROCEDURE GiveRaise(IN p_employee_id INT, IN p_raise_percent NUMERIC)
+LANGUAGE plpgsql AS $$
 BEGIN
     UPDATE Employees
-    SET Salary = Salary * (1 + p_percent)
-    WHERE EmployeeID = p_employee;
+    SET Salary = Salary * (1 + p_raise_percent)
+    WHERE EmployeeID = p_employee_id;
+    -- In a real scenario, you could add more steps here
 END;
 $$;
 
-CALL GiveRaise(106, 0.05);
+CALL GiveRaise(106, 0.05); -- Gives Faisal a 5% raise
 ```
 
-_After call:_ Faisal's salary increases from 68000 to 71400. Wrapping `UPDATE` in explicit transactions allows multi-step adjustments with rollback on error.
+***Impact:*** Faisal's salary increases from 68000 to 71400. This encapsulates business logic in the database.
 
 #### **Triggers**
 
-```sql
-CREATE TABLE SalaryAudit (
-    AuditID SERIAL PRIMARY KEY,
-    EmployeeID INT,
-    OldSalary NUMERIC(10,2),
-    NewSalary NUMERIC(10,2),
-    ChangedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+**Analogy:** A **Trigger** is like a security camera that starts recording automatically when it detects motion. You set it up once, and it reacts to events without you having to manually press "record."
 
+```sql
+CREATE TABLE SalaryAudit (AuditID SERIAL PRIMARY KEY, EmployeeID INT, OldSalary NUMERIC, NewSalary NUMERIC, ChangedAt TIMESTAMP);
 CREATE FUNCTION log_salary_change() RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO SalaryAudit(EmployeeID, OldSalary, NewSalary)
-    VALUES (OLD.EmployeeID, OLD.Salary, NEW.Salary);
+    INSERT INTO SalaryAudit(EmployeeID, OldSalary, NewSalary, ChangedAt)
+    VALUES (OLD.EmployeeID, OLD.Salary, NEW.Salary, now());
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_salary_update
-AFTER UPDATE OF Salary ON Employees
-FOR EACH ROW
-WHEN (OLD.Salary IS DISTINCT FROM NEW.Salary)
+CREATE TRIGGER trg_salary_update AFTER UPDATE OF Salary ON Employees
+FOR EACH ROW WHEN (OLD.Salary IS DISTINCT FROM NEW.Salary)
 EXECUTE FUNCTION log_salary_change();
 ```
 
-_Result:_ Any salary update inserts a row into `SalaryAudit`. For example, if `CALL GiveRaise(106, 0.05);` runs, a matching audit entry appears. Removing the trigger stops automatic logging without touching the main table.
+***Impact:*** Any salary update now automatically inserts a record into `SalaryAudit`, creating a permanent log of the change.
 
-#### **User-defined functions (UDFs)**
+#### **User-Defined Functions (UDFs)**
 
 ```sql
-CREATE FUNCTION format_employee_label(p_employee INT)
-RETURNS TEXT
-LANGUAGE sql
-AS $$
+CREATE FUNCTION format_employee_label(p_employee_id INT)
+RETURNS TEXT LANGUAGE sql AS $$
     SELECT e.FirstName || ' ' || e.LastName || ' (' || COALESCE(d.DepartmentName, 'Contractor') || ')'
     FROM Employees AS e
     LEFT JOIN Departments AS d ON e.DepartmentID = d.DepartmentID
-    WHERE e.EmployeeID = p_employee;
+    WHERE e.EmployeeID = p_employee_id;
 $$;
 
 SELECT format_employee_label(105);
 ```
 
-_Result:_ Returns `Erin Chen (Customer Success)`. Updating departmental assignments changes the function output automatically because it queries live tables.
+***Result:*** Returns the formatted string: `'Erin Chen (Customer Success)'`.
 
----
+-----
 
-### **5.10. Advanced Query Playbook (Updated)**
+### **🧠 Advanced Interview Questions (Advanced Objects)**
 
-| Scenario                          | Keyword Stack                        | What to Observe                                                                          |
-| :-------------------------------- | :----------------------------------- | :--------------------------------------------------------------------------------------- |
-| Compare rows within a segment     | `PARTITION BY` with window functions | Result columns stay at row grain while providing peer context                            |
-| Locate gaps or overlaps           | `LEFT JOIN` + `IS NULL`, or `EXCEPT` | Missing matches surface as `NULL` rows or result sets                                    |
-| Build explainable complex queries | Break logic into CTEs                | Each CTE becomes a named checkpoint you can inspect individually                         |
-| Reuse business logic safely       | Views, procedures, triggers          | Views share read logic; procedures encapsulate writes; triggers enforce background rules |
+:::note Question 1
+**What are the main advantages of using a View?**
+
+1. **Simplicity:** It hides complex logic from end-users.
+2. **Security:** It acts as a security layer to restrict access to certain columns or rows.
+3. **Maintainability:** If the underlying schema changes, you may only need to update the view, not every query that uses it.
+:::
+
+:::note Question 2
+**What are the dangers of using Triggers?**  
+**Answer:** The main danger is creating **"invisible" logic**. A simple `UPDATE` could fire a complex trigger, which might fire another trigger, leading to cascading effects that are very hard to debug. They can also add performance overhead to DML operations. They should be used sparingly and be extremely well-documented.
+:::
+
+:::note Question 3
+**Why use a Stored Procedure instead of running the same SQL from an application?**
+
+- **Performance:** They are pre-compiled and can reduce network traffic.
+- **Security:** You can grant `EXECUTE` permission on a procedure without granting permissions on the tables, reducing the risk of SQL injection.
+- **Encapsulation:** It centralizes business logic in the database, making the application code cleaner and the logic easier to update.
+:::
+
+-----
+
+### **5.10. Advanced Query Playbook**
+
+:::tip Quick Briefing
+Use this playbook as a cheat sheet. Match the business question to the SQL pattern, then follow the flow to sketch logic, build queries, validate outputs, and automate if needed.
+:::
+
+| Scenario                              | Keyword Stack                                                | What to Observe                                                                                               |
+| :------------------------------------ | :----------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------ |
+| Compare a row to its peers            | `PARTITION BY` with window functions (`AVG`, `RANK`, `LAG`). | The result set stays at the row grain while providing peer context. You get the detail *and* the summary.     |
+| Find gaps, orphans, or mismatches     | `LEFT JOIN` + `WHERE ... IS NULL`, or `EXCEPT`.              | Missing matches surface as `NULL` rows or empty/non-empty result sets, making reconciliation easy.            |
+| Build a complex, multi-step report    | Break the logic into sequential CTEs.                        | Each CTE becomes a named, logical checkpoint. You can test each step independently, making debugging trivial. |
+| Traverse a hierarchy                  | Recursive CTE.                                               | The query elegantly handles any depth in the hierarchy without you needing to know it in advance.             |
+| Share logic and enforce security      | `CREATE VIEW`, `CREATE PROCEDURE`.                           | Views share read logic; procedures encapsulate write logic. Both provide an abstraction layer for security.   |
+| Enforce a business rule automatically | `CREATE TRIGGER`.                                            | The database itself enforces the rule, ensuring it happens regardless of who or what updated the data.        |
 
 ```mermaid
 flowchart TD
-  idea[Business Question]
-  sketch[Sketch CTEs / Views]
-  assemble[Assemble SELECT + JOINs]
-  validate[Validate with Sample Rows]
-  automate[Automate via View/Procedure]
-  idea --> sketch --> assemble --> validate --> automate
-  classDef step fill:#f5f8ff,stroke:#1f3bb3,color:#081b33,stroke-width:2px;
-  class idea,sketch,assemble,validate,automate step;
+    idea["Business Question<br/>Who are my top performers relative to their peers?"]
+    sketch["Step 1 · Sketch Logic<br/>Rank employees in each department by salary"]
+    assemble["Step 2 · Assemble Query<br/>SELECT DENSE_RANK OVER PARTITION BY department"]
+    validate["Step 3 · Validate<br/>Ensure the ranking resets per department and handles ties"]
+    automate["Step 4 · Automate & Secure<br/>CREATE VIEW vw_performance_rank"]
+
+    idea --> sketch --> assemble --> validate --> automate
+    classDef step fill:#f5f8ff,stroke:#1f3bb3,color:#081b33,stroke-width:2px;
+    class idea,sketch,assemble,validate,automate step;
 ```
 
-> **Remember:** Each SQL keyword is a lever. Practice swapping predicates, adjusting bounds, and capturing before/after states so that every transformation is intentional and explainable.
+:::info Remember
+Each SQL keyword is a lever. Practice swapping predicates, adjusting bounds, and capturing before/after states so that every transformation is intentional and explainable. The path from a business question to a robust, automated report follows these logical steps.
+:::
