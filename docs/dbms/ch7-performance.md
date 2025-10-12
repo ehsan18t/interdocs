@@ -3,201 +3,371 @@ sidebar_position: 7
 title: Chapter 7 · Performance Optimization
 ---
 
-### **Introduction**
-
-Welcome to arguably the most critical chapter for any aspiring database professional. While previous chapters focused on keeping a database stable and secure, this chapter is dedicated to making it **fast**. Performance optimization is not a one-time task; it is a continuous cycle of measurement, analysis, and refinement. Poorly performing queries can bring an entire application to its knees, frustrate users, and incur significant infrastructure costs.
-
-This chapter provides a deep dive into the two pillars of database performance: **mastering indexing** and **proactive query optimization**. We will move beyond basic definitions to explore the underlying mechanics, strategic trade-offs, and real-world techniques that separate an average administrator from an expert.
+Performance work is a loop, not a finish line. Each tuning pass starts by observing the workload, forming a hypothesis, testing a change, and measuring again. This chapter mirrors the style of Chapters 4 and 5: we anchor the discussion in a shared dataset, we run multiple variations of every tuning technique, and we surface the before/after impact so you can see what actually changed deep inside the engine.
 
 ---
 
-### **7.1. Indexing**
+### **7.0. Lab Dataset and Baseline Metrics**
 
-An index is an on-disk data structure associated with a table that is designed to dramatically speed up data retrieval. Without an index, the database must perform a **Full Table Scan**, analogous to reading a book from the first page to the last to find a single piece of information. An index provides a direct, efficient path to the data, much like using the index at the back of a book.
+Unless a scenario explicitly changes data or configuration, assume the system resets to the state below.
 
-#### **How Indexes Work: A Deeper Look at the B-Tree**
+**`Customers`**
 
-The vast majority of relational database indexes use a data structure called a **B-Tree** (Balanced Tree). Understanding its structure is key to understanding index performance.
+| CustomerID | Region  | Segment  | CreatedAt  |
+| :--------- | :------ | :------- | :--------- |
+| 1001       | NA-West | Premium  | 2021-01-04 |
+| 1002       | NA-East | Standard | 2021-02-18 |
+| 1003       | EMEA    | Premium  | 2021-03-22 |
+| 1004       | APAC    | Startup  | 2021-04-09 |
+| 1005       | NA-West | Standard | 2021-05-15 |
 
+**`Orders`** (≈ 5 million rows in the simulated workload)
 
+| OrderID | CustomerID | OrderedAt           | Status    | TotalAmount |
+| :------ | :--------- | :------------------ | :-------- | :---------- |
+| 9000001 | 1001       | 2024-06-01 10:14:03 | SHIPPED   | 185.40      |
+| 9000002 | 1002       | 2024-06-01 10:15:11 | PENDING   | 42.50       |
+| 9000003 | 1005       | 2024-06-01 10:15:36 | SHIPPED   | 79.99       |
+| 9000004 | 1003       | 2024-06-01 10:16:02 | CANCELLED | 349.00      |
+| …       | …          | …                   | …         | …           |
 
-A B-Tree has several key properties:
-* **Balanced:** The distance from the root of the tree to any leaf node is the same. This guarantees that finding any piece of data takes a consistent, predictable amount of time.
-* **Sorted:** All elements within the tree are sorted, which allows for rapid searching and efficient range scans (e.g., `WHERE age BETWEEN 30 AND 40`).
-* **Hierarchical:**
-    1.  **Root Node:** The single entry point at the top of the tree.
-    2.  **Branch Nodes:** The intermediate levels that direct traffic. Each entry in a branch node contains a key value and a pointer to another node at the level below it.
-    3.  **Leaf Nodes:** The bottom level of the tree. The leaf nodes contain the indexed column values in sorted order, along with a pointer (a Row ID or RID) that gives the exact physical address of the corresponding data row on the disk.
+**`OrderLineItems`** (≈ 20 million rows)
 
-**How a Search Works:**
-Imagine searching for `EmployeeID = 5021` in a table with millions of rows.
-1.  The database starts at the **Root Node**. It reads the keys in the node (e.g., `1000, 5000, 9000`). Since `5021` is between `5000` and `9000`, it follows the pointer associated with that range.
-2.  It arrives at a **Branch Node** at the next level. This node might contain keys like `5000, 6000, 7000`. Since `5021` is less than `6000`, it follows that pointer.
-3.  This process repeats, traversing down the tree. Because the tree is balanced, this requires a very small number of disk reads (often just 3-4, even for millions of rows).
-4.  Finally, it reaches a **Leaf Node**, finds the entry for `5021`, retrieves the associated Row ID, and uses that ID to read the full data row directly from the disk.
+| LineID | OrderID | ProductID | Qty  | UnitPrice |
+| :----- | :------ | :-------- | :--- | :-------- |
+| 700001 | 9000001 | P-4432    | 2    | 92.70     |
+| 700002 | 9000001 | P-7788    | 1    | 64.00     |
+| …      | …       | …         | …    | …         |
 
-This traversal is exponentially faster than a full table scan.
+**`SlowQueryLog`** (captured over 24 hours)
 
-#### **Clustered vs. Non-Clustered Indexes**
+| QueryHash | SampleText                                           | ExecCount | AvgTimeMs | MaxTimeMs |
+| :-------- | :--------------------------------------------------- | :-------- | :-------- | :-------- |
+| H1        | `SELECT * FROM Orders WHERE CustomerID = ?`          | 48,512    | 83.40     | 612.52    |
+| H2        | `SELECT SUM(TotalAmount) FROM Orders WHERE Status=?` | 6,143     | 65.18     | 190.04    |
+| H3        | `SELECT … FROM Orders JOIN OrderLineItems …`         | 2,901     | 214.72    | 841.88    |
 
-| Type              | Description                                                                                                                                                                | Analogy                                                                                                                                                                       | Key Points                                                                                                                                                                                                                                                      |
-| :---------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Clustered**     | Determines the **physical sort order** of data on the disk. The leaf nodes of the clustered index *are* the data rows themselves.                                          | A printed dictionary. The words are physically sorted alphabetically, so the index and the data are one and the same. To find "Database," you go directly to the 'D' section. | **You can only have ONE clustered index per table.** In many DBMS (like SQL Server and MySQL's InnoDB engine), creating a `PRIMARY KEY` automatically creates a clustered index on that column. Choosing the clustered index key is a critical design decision. |
-| **Non-Clustered** | A separate data structure that is sorted according to the index key. The leaf nodes contain a pointer (the Row ID or the clustered key value) back to the actual data row. | The index at the back of a textbook. The index topics are sorted alphabetically, but the page numbers they point to are scattered throughout the book.                        | **You can have many non-clustered indexes on a table.** When you create an index on a non-primary key column, you are creating a non-clustered index.                                                                                                           |
+**Baseline metrics (no tuning applied yet)**
 
-#### **Creating and Managing Indexes**
+| Metric                          | Value       |
+| :------------------------------ | :---------- |
+| P95 latency for `Orders` lookup | 612 ms      |
+| Total logical reads per minute  | 1.8 million |
+| Buffer cache hit ratio          | 92%         |
+| Write journal stall rate        | 0.8%        |
 
-**Example 1: Standard Single-Column Index**
-Our application's user profile page frequently looks up users by their `email` address, which is unique.
+We will gradually improve these numbers and document the internal effects (access path, logical reads, CPU time) for every change.
+
+---
+
+### **7.1. Index Tuning in Practice**
+
+Indexes shape the access path. Every variation below shows the plan summary before and after a change so you can see how the optimizer responds.
+
+#### **Variation A – Missing index vs selective single-column index**
+
+**Query:**
+```sql
+SELECT OrderID, OrderedAt, TotalAmount
+FROM Orders
+WHERE CustomerID = 1003;
+```
+
+| State                                                           | Access Path             | Rows Scanned | AvgTimeMs | Notes                                              |
+| :-------------------------------------------------------------- | :---------------------- | :----------- | :-------- | :------------------------------------------------- |
+| Before                                                          | Seq Scan on `Orders`    | 5,000,000    | 83.4      | Touches entire table, high I/O                     |
+| After `CREATE INDEX idx_orders_customer ON Orders(CustomerID);` | Index Seek + Key Lookup | 8            | 3.1       | Optimizer jumps directly to matching customer rows |
+
+**Inside the buffer cache after indexing**
+
+| Metric                       | Before | After |
+| :--------------------------- | :----- | :---- |
+| Logical reads per execution  | 18,450 | 32    |
+| Physical reads per execution | 220    | 1     |
+| CPU time per execution (ms)  | 42     | 2     |
+
+The huge drop comes from eliminating the full table scan. Notice the remaining key lookup—each matching row still hops back to the clustered data pages. We remove that next.
+
+#### **Variation B – Turning the index into a covering index**
+
+**Extended query:**
+```sql
+SELECT OrderID, OrderedAt, TotalAmount
+FROM Orders
+WHERE CustomerID = 1003;
+```
 
 ```sql
--- Create a unique non-clustered index on the email column for fast lookups.
-CREATE UNIQUE INDEX idx_users_email ON Users (Email);
+CREATE INDEX idx_orders_customer_cover
+  ON Orders(CustomerID)
+  INCLUDE (OrderedAt, TotalAmount);
+DROP INDEX idx_orders_customer;
 ```
 
-  * Now, a query like `SELECT * FROM Users WHERE Email = 'example@domain.com';` will be nearly instantaneous.
+| State                   | Access Path         | Key Lookups | AvgTimeMs | Notes                         |
+| :---------------------- | :------------------ | :---------- | :-------- | :---------------------------- |
+| With non-covering index | Index Seek + Lookup | 3           | 3.1       | Each lookup fetches data page |
+| With covering index     | Index-only Seek     | 0           | 1.7       | Plan never touches base table |
 
-**Example 2: Composite (Multi-Column) Index**
-An e-commerce application has a search page that allows users to filter products by `category`, `brand`, and then sort by `price`. The order of columns in the index is crucial.
+**Inside the storage engine:** the seek reads only leaf pages of the nonclustered index. Because the requested columns live in the INCLUDE list, no extra lookups are needed.
+
+#### **Variation C – Composite index order matters (left-prefix rule)**
+
+**Typical workload:** filter by `Status`, then order by `OrderedAt DESC`.
 
 ```sql
--- The column order should match the most common query pattern.
-CREATE INDEX idx_products_cat_brand_price ON Products (Category, Brand, Price);
+-- Option 1 (incorrect order)
+CREATE INDEX idx_orders_status_amount ON Orders(Status, TotalAmount);
+
+-- Option 2 (matches workload)
+CREATE INDEX idx_orders_status_orderedat ON Orders(Status, OrderedAt DESC);
 ```
 
-  * **How it's used:** This index is highly effective for queries filtering on:
-      * `Category`
-      * `Category` AND `Brand`
-      * `Category` AND `Brand` AND `Price`
-  * **The "Left-Prefix" Rule:** The index is generally *not* useful for queries that only filter on `Brand` or only on `Price`, because `Category` is the leading column in the index.
+| Index                   | Filter + ORDER BY support | Plan Shape          | AvgTimeMs | Observation                      |
+| :---------------------- | :------------------------ | :------------------ | :-------- | :------------------------------- |
+| `(Status, TotalAmount)` | Poor (OrderedAt missing)  | Index Scan + Sort   | 74.2      | Sort spills to tempdb            |
+| `(Status, OrderedAt)`   | Excellent                 | Index Seek, no Sort | 8.6       | Plan streams rows already sorted |
 
-#### **Advanced Indexing: The Covering Index**
+Because the leading column in an index is the entry point, reordering columns to match filter → sort order removes the expensive sort step.
 
-A "covering index" is a special type of composite index that includes all the columns requested in a query. When a query can be satisfied entirely by the index, the database doesn't need to look up the actual data row from the table at all. This is called an "index-only scan" and is extremely fast.
+#### **Variation D – Partial/filtered index**
 
-**Example:** A query frequently fetches the title and salary for high-performing employees.
+**Scenario:** 90% of historical orders are closed; only recent `Status = 'PENDING'` orders need fast access.
 
 ```sql
--- Original Query
-SELECT Title, Salary FROM Employees WHERE PerformanceScore > 4.5;
-
--- Create a covering index
-CREATE INDEX idx_employees_perf_title_salary ON Employees (PerformanceScore, Title, Salary);
+CREATE INDEX idx_orders_pending_recent
+  ON Orders(OrderedAt DESC)
+  WHERE Status = 'PENDING' AND OrderedAt >= CURRENT_DATE - INTERVAL '30 days';
 ```
 
-  * **Result:** When the original query is run, the database can get the `PerformanceScore` (for the `WHERE` clause) and the `Title` and `Salary` (for the `SELECT` list) directly from the leaf nodes of the index. It never has to touch the main table data, leading to a massive performance gain.
+| Query                       | Access Path                | Pages Touched | AvgTimeMs |
+| :-------------------------- | :------------------------- | :------------ | :-------- |
+| Fetch recent pending orders | Bitmap Heap Scan (before)  | 120,000       | 96.0      |
+|                             | Partial Index Seek (after) | 1,240         | 4.2       |
 
-#### **Strategic Indexing Best Practices**
+Filtered indexes dramatically reduce index size and maintenance overhead while still accelerating the hot subset of data.
 
-  * **Index Foreign Keys:** This is the most important rule. Joins are common, and an un-indexed foreign key can lead to devastatingly slow performance.
-  * **Index for Your `WHERE` Clauses, `ORDER BY`, and `JOIN` Conditions:** These are the columns that the database uses to find and sort data.
-  * **Don't Over-Index:** This is a critical mistake. Every index adds overhead to your `INSERT`, `UPDATE`, and `DELETE` operations, as the database must update the table *and* every relevant index. This can slow down write performance significantly.
-  * **Analyze Cardinality:** "Cardinality" refers to the uniqueness of data in a column. A high-cardinality column (like a `TransactionID`) is a perfect index candidate. A very low-cardinality column (like a `Status` column with only "Active" and "Inactive" values) is a poor candidate because the index isn't selective enough to be useful.
-  * **Maintain Your Indexes:** Over time, as data is inserted and deleted, indexes can become "fragmented," leading to reduced performance. Periodically run maintenance tasks to `REBUILD` or `REORGANIZE` your indexes.
-  * **Drop Unused Indexes:** Use database monitoring tools to identify indexes that are never used by the query optimizer and drop them. They provide no benefit and only add write overhead.
+#### **Variation E – When an index hurts**
 
------
+Adding an index is not always a win. On a heavy-write table, every insert must maintain the index.
 
-### **7.2. Query Optimization**
+| Operation               | No Extra Index | With Extra Index | Delta         |
+| :---------------------- | :------------- | :--------------- | :------------ |
+| Batch insert 10k orders | 1.2 s          | 2.8 s            | +133% latency |
+| Transaction log growth  | 140 MB         | 280 MB           | +100%         |
 
-Writing efficient SQL is as important as creating the right indexes. A poorly written query can negate the the benefits of a perfect indexing strategy.
+> **Rule of thumb:** Keep only the indexes that demonstrably reduce read cost by more than they increase write cost.
 
-#### **Understanding the Query Optimizer and Execution Plans**
+---
 
-When you submit a query, a sophisticated component called the **Query Optimizer** parses it and generates multiple possible "execution plans." It then uses a cost-based model, leveraging internal statistics about your data (table size, value distribution, etc.), to estimate which plan will be the most efficient.
+### **7.2. Query Rewrites and Execution Plans**
 
-The `EXPLAIN` (or `EXPLAIN ANALYZE`) command is your window into the optimizer's mind. It reveals the chosen execution plan without running the query.
+The optimizer chooses a plan based on the SQL you hand it. Small syntactic tweaks can unlock better plans. We’ll inspect `EXPLAIN` summaries (simplified) and key metrics.
 
-**Example: Analyzing a Query Plan**
+#### **Variation A – `SELECT *` vs targeted projection**
 
 ```sql
-EXPLAIN ANALYZE SELECT * FROM Orders WHERE CustomerID = 1234;
+-- Original
+SELECT * FROM Orders WHERE CustomerID = 1003;
+
+-- Rewrite
+SELECT OrderID, OrderedAt, TotalAmount
+FROM Orders
+WHERE CustomerID = 1003;
 ```
 
-**Plan 1: Bad - Full Table Scan (No Index)**
+| Metric              | `SELECT *` | Targeted columns        | Explanation                                   |
+| :------------------ | :--------- | :---------------------- | :-------------------------------------------- |
+| Projected columns   | 12         | 3                       | Narrow projection lowers memory pressure      |
+| Key lookups         | 3          | 0 (with covering index) | Fewer columns mean covering index is feasible |
+| Avg network payload | 9.5 KB     | 2.1 KB                  | Less data crossing the wire                   |
 
+The rewrite plus covering index shrinks result size and eliminates extra lookups, aligning perfectly with Variation B above.
+
+#### **Variation B – Making predicates SARGable**
+
+```sql
+-- Original (non-SARGable)
+SELECT OrderID
+FROM Orders
+WHERE DATE(OrderedAt) = CURRENT_DATE;
+
+-- Rewrite
+SELECT OrderID
+FROM Orders
+WHERE OrderedAt >= CURRENT_DATE
+  AND OrderedAt < CURRENT_DATE + INTERVAL '1 day';
 ```
-Seq Scan on Orders  (cost=0.00..4550.50 rows=5 width=128) (actual time=0.05..35.2 ms)
-  Filter: (CustomerID = 1234)
+
+| Plan Metric  | Original  | Rewritten                 |
+| :----------- | :-------- | :------------------------ |
+| Access path  | Seq Scan  | Index Seek on `OrderedAt` |
+| Rows scanned | 5,000,000 | 18,240                    |
+| AvgTimeMs    | 148.6     | 5.4                       |
+
+Moving the function off the column allows the optimizer to use the time-based index. If the database supports it, a functional index on `DATE(OrderedAt)` would also work, but the predicate rewrite keeps the SQL portable.
+
+#### **Variation C – Replacing correlated subquery with `JOIN`**
+
+```sql
+-- Original
+SELECT o.OrderID
+FROM Orders o
+WHERE TotalAmount > (
+    SELECT AVG(TotalAmount)
+    FROM Orders
+    WHERE CustomerID = o.CustomerID
+);
+
+-- Rewrite
+WITH CustomerAverages AS (
+    SELECT CustomerID, AVG(TotalAmount) AS AvgAmount
+    FROM Orders
+    GROUP BY CustomerID
+)
+SELECT o.OrderID
+FROM Orders AS o
+JOIN CustomerAverages AS ca
+  ON ca.CustomerID = o.CustomerID
+WHERE o.TotalAmount > ca.AvgAmount;
 ```
 
-  * **`Seq Scan`**: This is a red flag. It means the database performed a **Sequential Scan**, reading the entire table from disk to find the 5 rows for this customer.
+| Metric                    | Correlated Subquery | CTE + Join  |
+| :------------------------ | :------------------ | :---------- |
+| Executions of inner query | 5,000,000           | 1           | Correlated subquery reruns per outer row |
+| Logical reads             | 92 million          | 1.5 million | Dramatic reduction                       |
+| AvgTimeMs                 | 842                 | 63          | Set-based rewrite wins                   |
 
-**Plan 2: Good - Index Scan**
+#### **Variation D – Splitting troublesome `OR` predicates**
 
+```sql
+-- Original
+SELECT OrderID
+FROM Orders
+WHERE Status = 'PENDING' OR Region = 'EMEA';
+
+-- Rewrite
+SELECT OrderID
+FROM Orders
+WHERE Status = 'PENDING'
+UNION ALL
+SELECT OrderID
+FROM Orders
+WHERE Region = 'EMEA' AND Status <> 'PENDING';
 ```
-Index Scan using idx_orders_customerid on Orders  (cost=0.42..8.44 rows=5 width=128) (actual time=0.03..0.04 ms)
-  Index Cond: (CustomerID = 1234)
+
+| Plan Metric        | Original | Rewritten                                  |
+| :----------------- | :------- | :----------------------------------------- |
+| Access path        | Seq Scan | Two index seeks                            |
+| AvgTimeMs          | 116      | 18                                         |
+| Duplicate handling | Implicit | Explicit (second query filters duplicates) |
+
+Splitting the predicate lets the optimizer exploit the `Status` and `Region` indexes independently.
+
+#### **Variation E – Window function versus self-join**
+
+```sql
+-- Ancient pattern using self-join
+SELECT a.OrderID
+FROM Orders a
+LEFT JOIN Orders b
+  ON a.CustomerID = b.CustomerID
+ AND a.OrderedAt < b.OrderedAt
+WHERE b.OrderID IS NULL;
+
+-- Modern window function
+SELECT OrderID
+FROM (
+    SELECT OrderID,
+           ROW_NUMBER() OVER (PARTITION BY CustomerID ORDER BY OrderedAt DESC) AS rn
+    FROM Orders
+) AS ranked
+WHERE rn = 1;
 ```
 
-  * **`Index Scan`**: This is what you want to see. The database used the `idx_orders_customerid` index to go directly to the required rows. Note the massive difference in both the estimated `cost` and the `actual time`.
+| Metric            | Self-join  | Window function |
+| :---------------- | :--------- | :-------------- |
+| Intermediate rows | 25 million | 5 million       | ROW_NUMBER avoids combinatorial explosion |
+| Temp space used   | 4.2 GB     | 480 MB          | Large reduction                           |
+| AvgTimeMs         | 410        | 62              |
 
-#### **Rewriting Inefficient Queries: Common Anti-Patterns**
+---
 
-**Anti-Pattern 1: `SELECT *` in Production Code**
-While convenient for ad-hoc analysis, using `SELECT *` in application code is inefficient.
+### **7.3. Statistics, Plans, and Maintenance Windows**
 
-  * **Problem:** It retrieves more data than necessary, increasing I/O and network traffic. More importantly, it prevents the use of covering indexes.
-  * **Inefficient:** `SELECT * FROM Employees WHERE EmployeeID = 101;`
-  * **Better:** `SELECT FirstName, LastName, HireDate FROM Employees WHERE EmployeeID = 101;`
+Indexes are only as good as the statistics that feed the optimizer. When those stats drift, good indexes look invisible.
 
-**Anti-Pattern 2: Non-SARGable Expressions in the `WHERE` Clause**
-A query is **SARGable** (Search-Argument-Able) if the database can use an index to satisfy the `WHERE` clause. Applying a function to an indexed column in the `WHERE` clause often makes it non-SARGable.
+#### **Variation A – Updating statistics**
 
-  * **Problem:** The database must first apply the function to every row in the table before it can do the comparison, forcing a full table scan.
-  * **Inefficient (non-SARGable):**
-    ```sql
-    -- This forces the database to run LOWER() on every single LastName before checking for 'smith'
-    SELECT * FROM Employees WHERE LOWER(LastName) = 'smith';
-    ```
-  * **Better (SARGable):** If your database supports it, create a function-based index.
-    ```sql
-    CREATE INDEX idx_employees_lastname_lower ON Employees (LOWER(LastName));
-    -- Now the original query becomes fast!
-    ```
-  * **Another Inefficient Example:**
-    ```sql
-    SELECT * FROM Orders WHERE OrderDate - INTERVAL '1 day' < NOW();
-    ```
-  * **Better (SARGable):** Move the calculation to the other side of the operator.
-    ```sql
-    SELECT * FROM Orders WHERE OrderDate < NOW() + INTERVAL '1 day';
-    ```
+| Action                   | P95 latency (ms) | Estimated rows accuracy |
+| :----------------------- | :--------------- | :---------------------- |
+| Before `ANALYZE Orders;` | 118              | Estimates off by 8×     |
+| After `ANALYZE Orders;`  | 42               | Estimates within 1.2×   |
 
-**Anti-Pattern 3: Inefficient `JOIN`s on Un-indexed or Mismatched Columns**
-Joining tables on columns that are not indexed is a primary cause of slow queries. Similarly, joining on columns with mismatched data types (e.g., a `VARCHAR` to an `INT`) forces the database to do costly data type conversions on the fly.
+Fresh statistics reduce cardinality guesswork, preventing plan regressions.
 
-  * **Problem:** The optimizer cannot use efficient join algorithms (like a Merge Join or Hash Join) and may have to resort to a Nested Loop, comparing every row from one table to every row in the other.
-  * **Fix:** Ensure that all foreign key columns have indexes and that the data types of primary and foreign keys match exactly.
+#### **Variation B – Rebuild vs Reorganize**
 
-**Anti-Pattern 4: Using `OR` on Different Columns**
-Using an `OR` condition that references two different indexed columns can be confusing for the optimizer. It often struggles to combine two separate indexes effectively and may default to a full table scan.
+| Index                         | Fragmentation | Operation                | Duration | Log Growth | When to choose               |
+| :---------------------------- | :------------ | :----------------------- | :------- | :--------- | :--------------------------- |
+| `idx_orders_customer_cover`   | 38%           | `ALTER INDEX REBUILD`    | 3m 12s   | 1.4 GB     | Use when fragmentation > 30% |
+| `idx_orders_status_orderedat` | 12%           | `ALTER INDEX REORGANIZE` | 42s      | 180 MB     | Use when 5–30%               |
 
-  * **Potentially Inefficient:**
-    ```sql
-    SELECT * FROM Customers WHERE Country = 'USA' OR Status = 'VIP';
-    ```
-  * **Better (Use `UNION ALL`):** This approach allows the optimizer to use two separate, efficient index scans and then combine the results.
-    ```sql
-    SELECT * FROM Customers WHERE Country = 'USA'
-    UNION ALL
-    SELECT * FROM Customers WHERE Status = 'VIP' AND Country <> 'USA';
-    ```
+Rebuild rewrites the index from scratch (heavy but thorough). Reorganize defragments in-place (lighter but slower to converge).
 
-**Anti-Pattern 5: Overusing Correlated Subqueries**
-A correlated subquery (one that references a column from the outer query) can be elegant but is often inefficient because the inner query must be re-executed for every single row processed by the outer query.
+#### **Variation C – Plan cache inspection**
 
-  * **Inefficient:** Find all departments that have at least one employee.
-    ```sql
-    SELECT d.DepartmentName
-    FROM Departments d
-    WHERE EXISTS (
-        SELECT 1 FROM Employees e WHERE e.DepartmentID = d.DepartmentID
-    );
-    ```
-  * **Usually Better (Use a `JOIN`):** A `JOIN` is typically processed as a single, set-based operation, which is much more efficient.
-    ```sql
-    SELECT DISTINCT d.DepartmentName
-    FROM Departments d
-    INNER JOIN Employees e ON d.DepartmentID = e.DepartmentID;
-    ```
+| QueryHash | Cached Plans | Avg CPU ms | Recompile Reason   |
+| :-------- | :----------- | :--------- | :----------------- |
+| H1        | 1            | 18         | Stable             |
+| H2        | 4            | 85         | Parameter sniffing |
+| H3        | 2            | 202        | Statistics changed |
+
+If a query has wildly different parameter values, consider *parameter-sensitive plan* techniques: OPTIMIZE FOR hints, plan guides, or rewriting to use recompile.
+
+---
+
+### **7.4. Workload Governance and Observability**
+
+#### **Connection pooling vs ad-hoc bursts**
+
+| Scenario           | Active sessions | CPU saturation | Wait type     |
+| :----------------- | :-------------- | :------------- | :------------ |
+| Without pooling    | 120             | 88%            | `THREADPOOL`  |
+| With 32-pool limit | 34              | 55%            | `PAGEIOLATCH` |
+
+Fewer, longer-lived connections reduce context switching and improve plan reuse.
+
+#### **Baseline monitoring checklist**
+
+| Time Range  | Key Metric                 | Threshold    | Action                                     |
+| :---------- | :------------------------- | :----------- | :----------------------------------------- |
+| Every 5 min | Top wait events            | `LCK_` > 5%  | Inspect blocking tree                      |
+| Hourly      | Buffer cache hit ratio     | < 90%        | Investigate index-only scans or cache size |
+| Nightly     | Autovacuum / autostats lag | > 2 hrs      | Trigger manual maintenance                 |
+| Weekly      | SlowQueryLog deltas        | > 10% growth | Re-run tuning playbook                     |
+
+---
+
+### **7.5. Putting It Together**
+
+```mermaid
+flowchart TD
+  observe[Observe Metrics & Waits]
+  hypothesize[Form Hypothesis · Index or Rewrite]
+  test[Test Change in Staging]
+  measure[Measure Plan + Latency]
+  decide[Ship or Revert]
+  observe --> hypothesize --> test --> measure --> decide --> observe
+  classDef step fill:#f4f8ff,stroke:#1e3ede,stroke-width:2px,color:#102050;
+  class observe,hypothesize,test,measure,decide step;
+```
+
+| Tuning Move                 | Primary Benefit             | Secondary Cost             | When to Roll Back                       |
+| :-------------------------- | :-------------------------- | :------------------------- | :-------------------------------------- |
+| Add covering index          | Slashes logical reads       | Higher write amplification | Write-heavy bursts slow noticeably      |
+| Rewrite correlated subquery | Reduces CPU and temp I/O    | More complex SQL           | Query plan still scans millions of rows |
+| Update statistics           | Fixes cardinality estimates | Temporary CPU spike        | Production window too tight             |
+| Limit pool size             | Stabilizes resource usage   | Slightly higher queue wait | Queue wait > SLA threshold              |
+
+> **Remember:** Performance tuning is applied science. Measure first, change one thing at a time, and keep a rollback plan for each experiment.
